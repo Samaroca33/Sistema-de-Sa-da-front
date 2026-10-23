@@ -1,0 +1,14 @@
+ALTERAÇÕES RECUPERADAS E AJUSTADAS
+
+1. Cadastro e edição do aluno: o campo de e-mail é apresentado como e-mail do responsável; permite indicar uso de van e escolher o motorista.
+2. Cadastro/edição/exclusão de motoristas de van, com nome, placa, telefone opcional e cor.
+3. Confirmação da inspetora em um clique, sem formulário adicional.
+4. Relatório diário com filtro limitado a 5º Ano A e 5º Ano B, incluindo ano e turma nas linhas.
+5. Layout responsivo modernizado, tema claro/escuro e ícones específicos por página.
+6. Integração REST com tratamento de erros, proxy explícito no comando npm start e reconexão STOMP.
+7. Chamadas de várias vans podem ficar ativas ao mesmo tempo e são mostradas junto da fila de alunos na inspetora e na TV.
+8. Encerrar/confirmar a saída de uma van remove a chamada localmente e publica evento VAN_CALL_ENDED no tópico STOMP /topic/patio.
+9. Dados de motoristas, vínculo aluno-van e relatório de saídas permanecem locais no navegador quando o back-end não oferece endpoints para persistir esses dados.
+
+IMPORTANTE
+O ZIP contém o front-end Angular. O back-end Spring Boot e o firmware do ESP32 não estavam incluídos no projeto recebido e precisam ser executados/configurados separadamente. O build Angular completo não pôde ser validado neste ambiente por indisponibilidade de instalação das dependências específicas do Linux; a verificação TypeScript foi concluída sem erros. A comunicação real com API/WebSocket depende do contrato e da configuração do back-end.

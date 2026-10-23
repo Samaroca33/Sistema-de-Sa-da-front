@@ -1,0 +1,41 @@
+SISTEMA DE PORTARIA ESCOLAR — ANGULAR + API SPRING BOOT + ESP32
+
+REQUISITOS
+- Node.js LTS e npm instalados.
+- API/back-end Spring Boot ativo.
+- Google Chrome ou Microsoft Edge para usar o leitor ESP32 via Web Serial.
+
+INSTALAÇÃO
+1. Extraia o ZIP e abra a pasta Sistema-escolar no VS Code.
+2. Abra o terminal nessa pasta e execute: npm install
+3. Confira proxy.conf.json. O destino padrão da API é http://localhost:80. Se seu Spring Boot estiver em outra porta, altere o campo target nas seções /api, /ws e /uploads (por exemplo, http://localhost:8080).
+4. Execute: npm start
+5. Abra http://localhost:4200/
+
+IMPORTANTE SOBRE A API
+- O comando npm start usa explicitamente proxy.conf.json para que /api, /ws e /uploads sejam encaminhados ao back-end.
+- A API deve expor os endpoints descritos em INTEGRACAO_API.txt. O back-end Java não está incluído neste ZIP; ele precisa estar iniciado separadamente.
+- Se o back-end estiver em outro computador, edite src/app/core/api.config.ts e configure API_HOST com o IP/porta reais; nesse cenário, o back-end também precisa permitir CORS e WebSocket para a origem do front-end.
+- Se os alunos não carregarem, abra no navegador http://localhost:4200/api/alunos (com o front-end iniciado) e confira se a resposta é JSON, não HTML. Também teste diretamente a URL do back-end configurada em proxy.conf.json.
+
+FUNCIONALIDADES
+- Cadastro/edição de alunos com e-mail do responsável.
+- Associação de aluno a motorista de van.
+- Cadastro e edição local de motoristas (armazenados no navegador, pois não há endpoint de vans no back-end fornecido).
+- Chamada RFID/manual, fila da inspetora e confirmação de saída com um único botão.
+- Registro de saída por van ou responsável e relatório filtrado para 5º Ano A/B.
+- Tema claro/escuro, layout responsivo e ícones específicos por página.
+- Chamadas de múltiplas vans simultâneas exibidas na tela da inspetora e na TV; os eventos de início/fim são enviados por STOMP em /topic/patio.
+
+LEITOR ESP32 + RFID
+- Clique em “Conectar ESP32 por USB” e selecione a porta serial correta.
+- O ESP32 deve transmitir o UID em uma linha terminada por newline (ex.: Serial.println(uid)), a 115200 baud.
+- Web Serial funciona principalmente no Chrome/Edge em localhost ou HTTPS.
+
+LIMITAÇÕES CONHECIDAS
+- A persistência oficial de alunos, cartões, chamadas e saídas depende do contrato da API Spring Boot.
+- Os campos de turma, vínculo com motorista e alguns dados do responsável são mantidos localmente porque o back-end enviado não expõe todos esses relacionamentos.
+- O relatório de saídas é local ao navegador/sessão e não substitui um relatório persistido no back-end.
+- A sincronização de chamadas de van entre computadores depende de o back-end aceitar mensagens STOMP no destino /topic/patio e redistribuí-las aos assinantes.
+
+Consulte INTEGRACAO_API.txt para detalhes do contrato REST e das limitações do back-end.
