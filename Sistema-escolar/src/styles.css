@@ -1019,14 +1019,268 @@ th {
   .actions {
     width: 100%;
     margin-left: 0;
+    flex-wrap: wrap;
   }
 
   .actions button {
-    flex: 1;
+    flex: 1 1 100%;
   }
 
   .filters {
     grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+    gap: 10px;
+    min-height: auto;
+  }
+
+  .brand {
+    flex: 1 1 100%;
+  }
+
+  .theme-btn {
+    margin-left: auto;
+  }
+
+  .page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .page-head .clock {
+    align-self: flex-end;
+  }
+
+  .nav-tabs {
+    width: calc(100% - 32px);
+    max-width: 100%;
+  }
+
+  .rfid-circle {
+    width: 220px;
+    height: 220px;
+  }
+
+  .reader-controls {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    padding: 12px 16px;
+  }
+
+  .brand-mark {
+    width: 40px;
+    height: 40px;
+  }
+
+  .brand strong {
+    font-size: 14px;
+  }
+
+  .brand span {
+    font-size: 9px;
+    letter-spacing: 2px;
+  }
+
+  .nav-tabs {
+    top: 68px;
+    margin-top: 10px;
+    padding: 4px;
+  }
+
+  .nav-tabs button {
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+
+  .nav-icon {
+    margin-right: 6px;
+  }
+
+  .content, .page-head {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .page-head h1 {
+    font-size: clamp(22px, 6vw, 28px);
+  }
+
+  .page-head p {
+    font-size: 13px;
+  }
+
+  .clock {
+    font-size: 18px;
+    padding: 8px 14px;
+  }
+
+  .section-card {
+    padding: 18px;
+  }
+
+  .section-title {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .section-title button,
+  .section-title .badge {
+    align-self: flex-start;
+  }
+
+  .rfid-area {
+    padding-top: 32px;
+  }
+
+  .rfid-circle {
+    width: 200px;
+    height: 200px;
+    margin: 24px 0 16px;
+  }
+
+  .rfid-icon {
+    font-size: 44px;
+  }
+
+  .rfid-circle strong {
+    font-size: 11px;
+  }
+
+  .scan-card {
+    padding: 18px;
+    gap: 16px;
+  }
+
+  .scan-card h2 {
+    font-size: 20px;
+  }
+
+  .avatar {
+    width: 50px;
+    height: 50px;
+    flex: 0 0 50px;
+  }
+
+  .avatar.small {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+  }
+
+  .student-card {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .confirm-box {
+    padding: 16px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .confirm-box > div {
+    width: 100%;
+  }
+
+  .confirm-box button {
+    width: 100%;
+  }
+
+  .driver-card {
+    padding: 18px;
+  }
+
+  .queue-item {
+    padding: 14px 16px;
+  }
+
+  .call-banner {
+    padding: 16px 18px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .call-banner button {
+    width: 100%;
+  }
+
+  .table-wrap {
+    border-radius: 12px;
+  }
+
+  th, td {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .edit-modal {
+    border-radius: 16px;
+    max-height: 92vh;
+  }
+
+  .edit-modal .section-card {
+    padding: 16px;
+  }
+
+  .form-actions {
+    flex-direction: column-reverse;
+  }
+
+  .form-actions button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .nav-tabs {
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-tabs button {
+    flex: 0 0 auto;
+  }
+
+  .theme-btn {
+    font-size: 12.5px;
+    padding: 8px 14px;
+  }
+
+  .rfid-circle {
+    width: 180px;
+    height: 180px;
+  }
+
+  .rfid-label {
+    font-size: 10px;
+    letter-spacing: 1.8px;
+  }
+
+  .demo-panel {
+    width: 100%;
+  }
+
+  .driver-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .active-van-grid .call-banner {
+    flex-direction: column;
+  }
+
+  .manual-student-item .secondary-btn {
+    width: 100%;
   }
 }
 
