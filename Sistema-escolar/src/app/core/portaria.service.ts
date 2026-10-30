@@ -52,6 +52,13 @@ interface LeituraApi {
 	confirmacaoNecessaria: boolean;
 	alunos: Array<{ alunoId: number; nome: string; fotoUrl?: string | null }>;
 	chamada: ChamadaApi | null;
+	/** Preenchido por GET /cartoes/identificar (consulta sem registrar chamada). */
+	aluno?: {
+		alunoId: number;
+		nome: string;
+		fotoUrl?: string | null;
+		detalhe?: string;
+	} | null;
 }
 
 const STATE_KEY = 'portaria-state-v1';
@@ -113,6 +120,13 @@ export class PortariaService {
 	 * Esse intervalo garante que a TV/lista atualize mesmo sem STOMP funcionando.
 	 */
 	private queueLoadInFlight = false;
+	/**
+	 * Alunos com chamada ATIVA agora (aguardando saída na fila).
+	 * Bloqueia apenas o envio duplicado da mesma chamada (ex.: o leitor RFID
+	 * lê o mesmo cartão duas vezes seguidas). A entrada é removida quando a
+	 * saída é confirmada, liberando o aluno para ser chamado novamente.
+	 */
+	private readonly calledToday = new Set<string>();
 	private studentsRetryTimer?: ReturnType<typeof setTimeout>;
 	private studentsLoaded = false;
 	private ws?: WebSocket;
@@ -487,6 +501,34 @@ export class PortariaService {
 		await this.loadStudents();
 	}
 
+	/** Vincula um cartão RFID (UID) a um aluno existente via POST /api/cartoes. */
+	async registerCard(alunoId: string | number, uid: string): Promise<void> {
+		const clean = uid.trim().toUpperCase().replace(/\s+/g, '');
+		await firstValueFrom(
+			this.http.post<CartaoApi>(`${API_BASE_URL}/cartoes`, {
+				uid: clean,
+				tipo: 'ALUNO',
+				ativo: true,
+				alunoId: Number(alunoId),
+			}),
+		);
+	}
+
+	/**
+	 * Identifica um cartão SEM registrar chamada (consulta somente leitura).
+	 * Nada vai para a fila nem para a TV antes do "Sim, é meu filho".
+	 */
+	async identifyCard(uid: string): Promise<LeituraApi> {
+		const clean = uid.trim().toUpperCase().replace(/\s+/g, '');
+		return firstValueFrom(
+			this.http
+				.get<LeituraApi>(`${API_BASE_URL}/cartoes/identificar`, {
+					params: { uid: clean },
+				})
+				.pipe(timeout(10000)),
+		);
+	}
+
 	async processRfidRead(
 		uid: string,
 		ponto: 'PORTARIA' | 'PORTAO' = 'PORTARIA',
@@ -507,7 +549,26 @@ export class PortariaService {
 				alunoId,
 			}),
 		);
+		this.calledToday.add(String(alunoId));
 		if (call) this.refreshQueueSoon();
+	}
+
+	/**
+	 * O aluno está com uma chamada pendente (na fila/na TV agora)?
+	 * Falso quando a saída já foi confirmada — nesse caso o aluno PODE ser
+	 * chamado de novo.
+	 */
+	isCalled(studentId: string | number): boolean {
+		const id = String(studentId);
+		return (
+			this.calledToday.has(id) ||
+			this.queue().some((item) => item.student.id === id)
+		);
+	}
+
+	/** Libera o aluno após a saída confirmada, permitindo nova chamada. */
+	private releaseCall(studentId: string): void {
+		this.calledToday.delete(String(studentId));
 	}
 
 	/**
@@ -648,6 +709,13 @@ export class PortariaService {
 				};
 			});
 			this.queue.set(queue);
+			// Sincroniza a trava com o estado real: quem saiu da fila no back-end
+			// (saída confirmada) volta a poder ser chamado.
+			const active = new Set(queue.map((item) => item.student.id));
+			for (const id of [...this.calledToday]) {
+				if (!active.has(id)) this.calledToday.delete(id);
+			}
+			for (const id of active) this.calledToday.add(id);
 		} catch (error) {
 			// A falha da fila NÃO limpa nem sobrescreve o erro de alunos:
 			// são fluxos independentes e a portaria precisa seguir funcionando.
@@ -657,12 +725,18 @@ export class PortariaService {
 		}
 	}
 
+	/**
+	 * Registra a chamada do aluno (aparece na fila e na TV).
+	 * Só deve ser chamado DEPOIS da confirmação "é seu filho?" na tela —
+	 * antes disso nada é enviado ao back-end.
+	 */
 	async callManual(student: Student): Promise<void> {
 		const call = await firstValueFrom(
 			this.http.post<ChamadaApi>(`${API_BASE_URL}/chamadas/manual`, {
 				alunoId: Number(student.id),
 			}),
 		);
+		this.calledToday.add(student.id);
 		// Mostra o aluno na fila na hora e reconcilia em segundo plano.
 		if (call) {
 			const now = new Date();
@@ -697,6 +771,8 @@ export class PortariaService {
 		);
 		// Remove da fila imediatamente, sem esperar o GET /api/chamadas.
 		if (item) {
+			// Saída confirmada: o aluno pode ser chamado novamente depois.
+			this.releaseCall(item.student.id);
 			this.queue.update((items) => items.filter((x) => x.id !== queueId));
 			const driver = this.vanDrivers().find(
 				(d) => d.id === item.student.vanDriverId,

@@ -1,481 +1,1289 @@
 <app-tv *ngIf="isTv"></app-tv>
 
-<div class="app-shell" *ngIf="!isTv">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark">EM</div>
-      <div>
-        <strong>ESCOLA MUNICIPAL</strong>
-        <span>SISTEMA DE SAÍDA</span>
-      </div>
-    </div>
+<app-login *ngIf="!isTv && !authService.isAuthenticated()"></app-login>
 
-    <button class="theme-btn" type="button" (click)="toggleTheme()">
-      {{ svc.theme() === 'dark' ? '☀ Tema claro' : '☾ Tema escuro' }}
-    </button>
-  </header>
+<div
+	class="app-shell"
+	*ngIf="!isTv && authService.isAuthenticated()"
+>
+	<header class="topbar">
+		<div class="brand">
+			<div class="brand-mark">EM</div>
+			<div>
+				<strong>ESCOLA MUNICIPAL</strong>
+				<span>SISTEMA DE SAÍDA</span>
+			</div>
+		</div>
 
-  <nav class="nav-tabs">
-    <button
-      *ngFor="let item of navItems"
-      type="button"
-      [class.active]="view === item.key"
-      (click)="nav(item.key)">
-      <span class="nav-icon">{{ item.icon }}</span>
-      {{ item.label }}
-    </button>
-  </nav>
+		<div class="topbar-user">
+			<span
+				>{{ authService.user()?.name }} ({{ authService.user()?.role }})</span
+			>
+			<button
+				class="theme-btn"
+				type="button"
+				(click)="toggleTheme()"
+			>
+				{{ svc.theme() === 'dark' ? '☀ Tema claro' : '☾ Tema escuro' }}
+			</button>
+			<button
+				class="secondary-btn"
+				type="button"
+				(click)="toggleFullscreen()"
+				*ngIf="view === 'portaria' || view === 'tv'"
+			>
+				{{ fullscreenMode ? 'Sair tela cheia' : 'Tela cheia' }}
+			</button>
+			<button
+				class="danger-btn"
+				type="button"
+				(click)="authService.logout()"
+			>
+				Sair
+			</button>
+		</div>
+	</header>
 
-  <section class="page-head">
-    <div>
-      <h1>{{ pageTitle }}</h1>
-      <p>{{ pageSubtitle }}</p>
-    </div>
-    <strong class="clock">{{ time(now) }}</strong>
-  </section>
+	<div
+		class="fullscreen-pin"
+		*ngIf="fullscreenExitPrompt"
+	>
+		<div
+			class="fullscreen-pin-overlay"
+			(click)="cancelFullscreenExit()"
+		></div>
+		<div
+			class="fullscreen-pin-box"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Sair da tela cheia"
+		>
+			<h3>Sair da tela cheia</h3>
+			<p>Digite o código de segurança:</p>
+			<input
+				type="password"
+				[(ngModel)]="fullscreenPinInput"
+				placeholder="Código PIN"
+				inputmode="numeric"
+				autocomplete="off"
+				maxlength="8"
+				(keyup.enter)="exitFullscreenWithPin()"
+			/>
+			<div class="pin-actions">
+				<button
+					class="secondary-btn"
+					type="button"
+					(click)="cancelFullscreenExit()"
+				>
+					Cancelar
+				</button>
+				<button
+					class="primary-btn"
+					type="button"
+					(click)="exitFullscreenWithPin()"
+				>
+					{{ fullscreenPinSubmitting ? 'Saindo...' : 'Confirmar' }}
+				</button>
+			</div>
+			<div
+				class="error-msg"
+				*ngIf="fullscreenPinError"
+			>
+				{{ fullscreenPinError }}
+			</div>
+			<div class="note">
+				<span>Alterar código</span>
+				<input
+					type="text"
+					[(ngModel)]="newFullscreenPin"
+					maxlength="8"
+					placeholder="Novo PIN (4+ dígitos)"
+				/>
+				<button
+					class="secondary-btn"
+					type="button"
+					(click)="changeFullscreenPin(newFullscreenPin)"
+				>
+					Salvar
+				</button>
+				<div
+					class="pin-success"
+					*ngIf="fullscreenPinSuccess"
+				>
+					{{ fullscreenPinSuccess }}
+				</div>
+			</div>
+		</div>
+	</div>
 
-  <main class="content">
-    <div class="error-card form-msg" *ngIf="apiActionError && view !== 'portaria'">{{ apiActionError }}</div>
+	<nav class="nav-tabs">
+		<button
+			*ngFor="let item of filteredNavItems"
+			type="button"
+			[class.active]="view === item.key"
+			(click)="nav(item.key)"
+		>
+			<span class="nav-icon">{{ item.icon }}</span>
+			{{ item.label }}
+		</button>
+	</nav>
 
-    <section *ngIf="view === 'portaria'" class="view portaria-view">
-      <input
-        type="text"
-        [(ngModel)]="cardId"
-        (keyup.enter)="onCardScanned()"
-        (input)="onCardInput()"
-        autocomplete="off"
-        tabindex="-1"
-        aria-hidden="true"
-        class="rfid-input">
+	<section class="page-head">
+		<div>
+			<h1>{{ pageTitle }}</h1>
+			<p>{{ pageSubtitle }}</p>
+		</div>
+		<strong class="clock">{{ time(now) }}</strong>
+	</section>
 
-      <div class="rfid-area">
-        <span class="rfid-label">LEITOR RFID ATIVO</span>
+	<main class="content">
+		<div
+			class="error-card form-msg"
+			*ngIf="apiActionError && view !== 'portaria'"
+		>
+			{{ apiActionError }}
+		</div>
 
-        <button class="rfid-circle" type="button" (click)="demoOpen = !demoOpen">
-          <span class="rfid-icon">{{ scanning ? '◌' : '□' }}</span>
-          <strong>{{ scanning ? 'LENDO CARTÃO' : 'AGUARDANDO CARTÃO' }}</strong>
-        </button>
+		<section
+			*ngIf="view === 'portaria'"
+			class="view portaria-view"
+		>
+			<!-- Leitor RFID em modo teclado (USB/HID). O campo fica invisivel, mas
+			     precisa existir para o leitor "digitar" o UID e enviar o Enter. -->
+			<input
+				type="text"
+				[(ngModel)]="cardId"
+				(keyup.enter)="onCardScanned()"
+				(input)="onCardInput()"
+				autocomplete="off"
+				tabindex="0"
+				aria-label="Leitura do cartão RFID"
+				class="rfid-input"
+			/>
 
-        <p>Aproxime o cartão RFID do leitor</p>
-        <div class="reader-controls">
-          <small *ngIf="svc.studentsLoading()">Carregando alunos do back-end...</small>
-          <div class="error-card form-msg" *ngIf="svc.apiError()">
-            <strong>Não foi possível carregar os alunos</strong>
-            <span>{{ svc.apiError() }}</span>
-            <button class="secondary-btn" type="button" (click)="reloadStudents()">Tentar novamente</button>
-          </div>
-          <button class="primary-btn" type="button" *ngIf="!readerConnected" (click)="connectReader()">Conectar ESP32 por USB</button>
-          <button class="secondary-btn" type="button" *ngIf="readerConnected" (click)="disconnectReader()">Desconectar leitor</button>
-          <small>{{ readerStatus }}</small>
-        </div>
-        <div class="error-card form-msg" *ngIf="unknownCard">
-          <strong>Cartão não cadastrado</strong>
-          <span>UID recebido: {{ unknownCard }}. Cadastre esse UID no campo Cartão RFID e salve no back-end.</span>
-        </div>
-        <div class="error-card form-msg" *ngIf="apiActionError">{{ apiActionError }}</div>
+			<div class="rfid-area">
+				<span class="rfid-label">LEITOR RFID ATIVO</span>
 
-        <div class="section-card" *ngIf="guardianChoices.length">
-          <div class="section-title">
-            <div>
-              <h2>Selecione o aluno</h2>
-              <p>Este cartão pertence a um responsável associado a mais de um aluno.</p>
-            </div>
-          </div>
-          <div class="student-grid">
-            <button class="student-card" *ngFor="let choice of guardianChoices" type="button" (click)="confirmGuardianStudent(choice)">
-              <app-avatar [small]="true" [name]="choice.nome" [photo]="choice.fotoUrl || undefined" color="#C8102E"></app-avatar>
-              <span><strong>{{ choice.nome }}</strong><small>Confirmar chamada</small></span>
-            </button>
-          </div>
-        </div>
+				<button
+					class="rfid-circle"
+					type="button"
+					(click)="demoOpen = !demoOpen"
+				>
+					<span class="rfid-icon">{{ scanning ? '◌' : '□' }}</span>
+					<strong>{{ scanning ? 'LENDO CARTÃO' : 'AGUARDANDO CARTÃO' }}</strong>
+				</button>
 
-        <div class="demo-panel" *ngIf="demoOpen">
-          <span>Teste do leitor</span>
-          <button *ngFor="let student of svc.students()" type="button" (click)="simulateScan(student)">
-            {{ student.name }} — {{ student.rfidCard }}
-          </button>
-        </div>
-      </div>
+				<p>Aproxime o cartão RFID do leitor</p>
+				<div class="reader-controls">
+					<small *ngIf="svc.studentsLoading()"
+						>Carregando alunos do back-end...</small
+					>
+					<div
+						class="error-card form-msg"
+						*ngIf="svc.apiError()"
+					>
+						<strong>Não foi possível carregar os alunos</strong>
+						<span>{{ svc.apiError() }}</span>
+						<button
+							class="secondary-btn"
+							type="button"
+							(click)="reloadStudents()"
+						>
+							Tentar novamente
+						</button>
+					</div>
+					<button
+						class="primary-btn"
+						type="button"
+						*ngIf="!readerConnected"
+						(click)="connectReader()"
+					>
+						Conectar ESP32 por USB
+					</button>
+					<button
+						class="secondary-btn"
+						type="button"
+						*ngIf="readerConnected"
+						(click)="disconnectReader()"
+					>
+						Desconectar leitor
+					</button>
+					<small>{{ readerStatus }}</small>
+				</div>
+				<div
+					class="error-card form-msg"
+					*ngIf="unknownCard"
+				>
+					<strong>Cartão não reconhecido</strong>
+					<span>O cartão aproximado não está cadastrado no sistema.</span>
+				</div>
+				<div
+					class="error-card form-msg"
+					*ngIf="apiActionError"
+				>
+					{{ apiActionError }}
+				</div>
 
-      <div class="scan-card" *ngIf="detected">
-        <app-avatar [name]="detected.name" [color]="detected.avatarColor" [photo]="detected.photo"></app-avatar>
-        <div>
-          <small>ALUNO IDENTIFICADO</small>
-          <h2>{{ detected.name }}</h2>
-          <p>{{ detected.grade }} • Turma {{ detected.class }}</p>
-          <p>Responsável: {{ detected.parentName }}</p>
-        </div>
-        <div class="actions">
-          <button class="secondary-btn" type="button" (click)="cancelDetected()">Cancelar</button>
-          <button class="primary-btn" type="button" (click)="confirmDetected()">Confirmar saída</button>
-        </div>
-      </div>
+				<div
+					class="section-card"
+					*ngIf="guardianChoices.length"
+				>
+					<div class="section-title">
+						<div>
+							<h2>Selecione o aluno</h2>
+							<p>
+								Este cartão pertence a um responsável associado a mais de um
+								aluno.
+							</p>
+						</div>
+					</div>
+					<div class="student-grid">
+						<button
+							class="student-card"
+							*ngFor="let choice of guardianChoices"
+							type="button"
+							(click)="confirmGuardianStudent(choice)"
+						>
+							<app-avatar
+								[small]="true"
+								[name]="choice.nome"
+								[photo]="choice.fotoUrl || undefined"
+								color="#C8102E"
+							></app-avatar>
+							<span
+								><strong>{{ choice.nome }}</strong
+								><small>Confirmar chamada</small></span
+							>
+						</button>
+					</div>
+				</div>
 
-      <div class="success-card" *ngIf="confirmed">
-        <strong>Saída registrada</strong>
-        <span>{{ confirmed.name }} foi colocado na fila da inspetora.</span>
-      </div>
-    </section>
+				<div
+					class="demo-panel"
+					*ngIf="demoOpen"
+				>
+					<span>Teste do leitor</span>
+					<button
+						*ngFor="let student of svc.students()"
+						type="button"
+						(click)="simulateScan(student)"
+					>
+						{{ student.name }} — {{ student.rfidCard }}
+					</button>
+				</div>
+			</div>
 
-    <section *ngIf="view === 'manual'" class="view">
-      <div class="section-card">
-        <div class="section-title">
-          <div>
-            <h2>Chamada Manual</h2>
-            <p>Selecione o aluno quando a leitura RFID não estiver disponível.</p>
-          </div>
-          <span class="badge">{{ queueCount }} na fila</span>
-        </div>
+			<div
+				class="scan-card"
+				*ngIf="detected"
+			>
+				<app-avatar
+					[name]="detected.name"
+					[color]="detected.avatarColor"
+					[photo]="detected.photo"
+				></app-avatar>
+				<div>
+					<small>ALUNO IDENTIFICADO</small>
+					<h2>{{ detected.name }}</h2>
+					<p>{{ detected.grade }} • Turma {{ detected.class }}</p>
+					<p>Responsável: {{ detected.parentName }}</p>
+				</div>
+				<div class="actions">
+					<button
+						class="secondary-btn"
+						type="button"
+						(click)="cancelDetected()"
+					>
+						Cancelar
+					</button>
+					<button
+						class="primary-btn"
+						type="button"
+						(click)="confirmDetected()"
+					>
+						Confirmar saída
+					</button>
+				</div>
+			</div>
 
-        <div class="filters">
-          <select [(ngModel)]="manualGrade">
-            <option value="all">Todos os alunos</option>
-            <option value="5º Ano A">5º Ano A</option>
-            <option value="5º Ano B">5º Ano B</option>
-          </select>
-          <input [(ngModel)]="manualSearch" placeholder="Buscar aluno...">
-        </div>
+			<div
+				class="success-card"
+				*ngIf="successNotice"
+			>
+				<strong>Chamada registrada</strong>
+				<span>{{ successNotice }}</span>
+			</div>
 
-        <div class="empty" *ngIf="svc.studentsLoading()">Carregando alunos...</div>
-        <div class="empty" *ngIf="!svc.studentsLoading() && manualStudents.length === 0">Nenhum aluno encontrado para este filtro. Confira o cadastro da turma.</div>
+			<div
+				class="success-card"
+				*ngIf="confirmed"
+			>
+				<strong>Saída registrada</strong>
+				<span>{{ confirmed.name }} foi colocado na fila da inspetora.</span>
+			</div>
+		</section>
 
-        <div class="student-grid">
-          <div class="manual-student-item" *ngFor="let student of manualStudents">
-            <button class="student-card" type="button" [disabled]="isQueued(student)" (click)="selectManual(student)">
-              <app-avatar [small]="true" [name]="student.name" [color]="student.avatarColor" [photo]="student.photo"></app-avatar>
-              <span>
-                <strong>{{ student.name }}</strong>
-                <small>{{ student.grade }} • Turma {{ student.class }}</small>
-              </span>
-              <em>{{ isQueued(student) ? 'Na fila' : 'Selecionar' }}</em>
-            </button>
-            <button class="secondary-btn" type="button" (click)="editStudent(student)">Editar aluno</button>
-          </div>
-        </div>
-      </div>
+		<section
+			*ngIf="view === 'manual'"
+			class="view"
+		>
+			<div class="section-card">
+				<div class="section-title">
+					<div>
+						<h2>Chamada Manual</h2>
+						<p>
+							Selecione o aluno quando a leitura RFID não estiver disponível.
+						</p>
+					</div>
+					<span class="badge">{{ queueCount }} na fila</span>
+				</div>
 
-      <div class="confirm-box" *ngIf="pending">
-        <div>
-          <small>ALUNO SELECIONADO</small>
-          <h3>{{ pending.name }}</h3>
-          <p>{{ pending.grade }} • Turma {{ pending.class }}</p>
-        </div>
-        <button class="secondary-btn" type="button" (click)="cancelManual()">Cancelar</button>
-        <button class="primary-btn" type="button" (click)="confirmManual()">Confirmar saída</button>
-      </div>
+				<div class="filters">
+					<select [(ngModel)]="manualGrade">
+						<option value="all">Todos os alunos</option>
+						<option value="5º Ano A">5º Ano A</option>
+						<option value="5º Ano B">5º Ano B</option>
+					</select>
+					<input
+						[(ngModel)]="manualSearch"
+						placeholder="Buscar aluno..."
+					/>
+				</div>
 
-      <div class="success-card" *ngIf="manualConfirmed">
-        Saída de <strong>{{ manualConfirmed.name }}</strong> registrada.
-      </div>
+				<div
+					class="empty"
+					*ngIf="svc.studentsLoading()"
+				>
+					Carregando alunos...
+				</div>
+				<div
+					class="empty"
+					*ngIf="!svc.studentsLoading() && manualStudents.length === 0"
+				>
+					Nenhum aluno encontrado para este filtro. Confira o cadastro da turma.
+				</div>
 
-      <div class="edit-modal-backdrop" *ngIf="editingStudent" (click)="cancelEditStudent()">
-       <div class="edit-modal section-card" role="dialog" aria-modal="true" aria-label="Editar aluno" (click)="$event.stopPropagation()">
-        <div class="section-title"><div><h2>Editar aluno</h2><p>{{ editingStudent.name }}</p></div><button class="secondary-btn" type="button" (click)="cancelEditStudent()">Fechar ✕</button></div>
-        <div class="error-card form-msg" *ngIf="editError">{{ editError }}</div>
-        <div class="success-card form-msg" *ngIf="editMessage">{{ editMessage }}</div>
-        <div class="form-grid">
-          <label>Nome completo<input [(ngModel)]="editDraft.name"></label>
-          <label>E-mail do responsável<input type="email" [(ngModel)]="editDraft.email"></label>
-          <label>CPF<input [(ngModel)]="editDraft.cpf" placeholder="000.000.000-00"></label>
-          <label>Data de nascimento<input type="date" [(ngModel)]="editDraft.birthDate"></label>
-          <label>Ano<select [(ngModel)]="editDraft.grade"><option value="5º Ano">5º Ano</option></select></label>
-          <label>Turma<select [(ngModel)]="editDraft.class"><option value="A">5º Ano A</option><option value="B">5º Ano B</option></select></label>
-          <label>Nome do responsável<input [(ngModel)]="editDraft.parentName"></label>
-          <label>Telefone do responsável<input type="tel" [(ngModel)]="editDraft.guardianPhone" placeholder="(00) 00000-0000"></label>
-          <label class="check-label">
-            <input type="checkbox" [(ngModel)]="editDraft.isVan" (ngModelChange)="onEditVanChange($event)">
-            <span>Aluno utiliza Van Escolar</span>
-          </label>
-          <label>
-            Motorista da van
-            <select [(ngModel)]="editDraft.vanDriverId" [disabled]="!editDraft.isVan">
-              <option [ngValue]="undefined">Selecione o motorista</option>
-              <option *ngFor="let driver of svc.vanDrivers()" [value]="driver.id">{{ driver.name }} • {{ driver.plate }}</option>
-            </select>
-          </label>
-          <label class="edit-photo-field">Foto do aluno<input type="file" accept="image/*" (change)="onEditPhotoSelected($event)"></label>
-        </div>
-        <div class="edit-photo-preview" *ngIf="editDraft.photo">
-          <app-avatar [name]="editDraft.name || ''" [photo]="editDraft.photo" [color]="editDraft.avatarColor || '#C8102E'"></app-avatar>
-          <button class="secondary-btn" type="button" (click)="removeEditPhoto()">Remover foto</button>
-        </div>
-        <div class="form-actions edit-modal-actions"><button class="danger-btn" type="button" (click)="deleteStudent(editingStudent)">Excluir aluno</button><span class="action-spacer"></span><button class="secondary-btn" type="button" (click)="cancelEditStudent()">Cancelar</button><button class="primary-btn" type="button" (click)="saveStudentEdit()">Salvar alterações</button></div>
-       </div>
-      </div>
-    </section>
+				<div class="student-grid">
+					<div
+						class="manual-student-item"
+						*ngFor="let student of manualStudents"
+					>
+						<button
+							class="student-card"
+							type="button"
+							(click)="selectManual(student)"
+						>
+							<app-avatar
+								[small]="true"
+								[name]="student.name"
+								[color]="student.avatarColor"
+								[photo]="student.photo"
+							></app-avatar>
+							<span>
+								<strong>{{ student.name }}</strong>
+								<small>{{ student.grade }} • Turma {{ student.class }}</small>
+							</span>
+							<em>{{ isQueued(student) ? 'Na fila' : 'Selecionar' }}</em>
+						</button>
+						<button
+							class="secondary-btn"
+							type="button"
+							(click)="editStudent(student)"
+						>
+							Editar aluno
+						</button>
+					</div>
+				</div>
+			</div>
 
-    <section *ngIf="view === 'van'" class="view">
-      <div class="section-card">
-        <div class="section-title">
-          <div>
-            <h2>Van Escolar</h2>
-            <p>Cadastro dos motoristas das vans, chamada e alunos vinculados.</p>
-          </div>
-          <button class="primary-btn" type="button" (click)="startVanForm()">+ Cadastrar motorista</button>
-        </div>
+			<div
+				class="success-card"
+				*ngIf="successNotice"
+			>
+				<strong>Chamada registrada</strong>
+				<span>{{ successNotice }}</span>
+			</div>
 
-        <div class="success-card form-msg" *ngIf="vanMessage">{{ vanMessage }}</div>
-        <div class="error-card form-msg" *ngIf="vanError">{{ vanError }}</div>
+			<div
+				class="success-card"
+				*ngIf="manualConfirmed"
+			>
+				Saída de <strong>{{ manualConfirmed.name }}</strong> registrada.
+			</div>
 
-        <div class="section-card van-form" *ngIf="vanFormOpen">
-          <div class="section-title">
-            <div>
-              <h3>{{ editingVanId ? 'Editar motorista' : 'Novo motorista de van' }}</h3>
-              <p>Informe o nome do motorista e os dados da van.</p>
-            </div>
-          </div>
-          <div class="form-grid">
-            <label>Nome do motorista<input [(ngModel)]="vanForm.name" placeholder="Ex.: Marcos Almeida"></label>
-            <label>Placa da van<input [(ngModel)]="vanForm.plate" placeholder="ABC-1D23"></label>
-            <label>Telefone<input type="tel" [(ngModel)]="vanForm.phone" placeholder="(00) 00000-0000"></label>
-            <label>Cor do avatar<input class="color-input" type="color" [(ngModel)]="vanForm.color"></label>
-          </div>
-          <div class="form-actions">
-            <button class="secondary-btn" type="button" (click)="cancelVanForm()">Cancelar</button>
-            <button class="primary-btn" type="button" (click)="saveVan()">Salvar motorista</button>
-          </div>
-        </div>
+			<div
+				class="edit-modal-backdrop"
+				*ngIf="editingStudent"
+				(click)="cancelEditStudent()"
+			>
+				<div
+					class="edit-modal section-card"
+					role="dialog"
+					aria-modal="true"
+					aria-label="Editar aluno"
+					(click)="$event.stopPropagation()"
+				>
+					<div class="section-title">
+						<div>
+							<h2>Editar aluno</h2>
+							<p>{{ editingStudent.name }}</p>
+						</div>
+						<button
+							class="secondary-btn"
+							type="button"
+							(click)="cancelEditStudent()"
+						>
+							Fechar ✕
+						</button>
+					</div>
+					<div
+						class="error-card form-msg"
+						*ngIf="editError"
+					>
+						{{ editError }}
+					</div>
+					<div
+						class="success-card form-msg"
+						*ngIf="editMessage"
+					>
+						{{ editMessage }}
+					</div>
+					<div class="form-grid">
+						<label>Nome completo<input [(ngModel)]="editDraft.name" /></label>
+						<label
+							>E-mail do responsável<input
+								type="email"
+								[(ngModel)]="editDraft.email"
+						/></label>
+						<label
+							>CPF<input
+								[(ngModel)]="editDraft.cpf"
+								placeholder="000.000.000-00"
+						/></label>
+						<label
+							>Data de nascimento<input
+								type="date"
+								[(ngModel)]="editDraft.birthDate"
+						/></label>
+						<label
+							>Ano<select [(ngModel)]="editDraft.grade">
+								<option value="5º Ano">5º Ano</option>
+							</select></label
+						>
+						<label
+							>Turma<select [(ngModel)]="editDraft.class">
+								<option value="A">5º Ano A</option>
+								<option value="B">5º Ano B</option>
+							</select></label
+						>
+						<label
+							>Nome do responsável<input [(ngModel)]="editDraft.parentName"
+						/></label>
+						<label
+							>Telefone do responsável<input
+								type="tel"
+								[(ngModel)]="editDraft.guardianPhone"
+								placeholder="(00) 00000-0000"
+						/></label>
+						<label class="check-label">
+							<input
+								type="checkbox"
+								[(ngModel)]="editDraft.isVan"
+								(ngModelChange)="onEditVanChange($event)"
+							/>
+							<span>Aluno utiliza Van Escolar</span>
+						</label>
+						<label>
+							Motorista da van
+							<select
+								[(ngModel)]="editDraft.vanDriverId"
+								[disabled]="!editDraft.isVan"
+							>
+								<option [ngValue]="undefined">Selecione o motorista</option>
+								<option
+									*ngFor="let driver of svc.vanDrivers()"
+									[value]="driver.id"
+								>
+									{{ driver.name }} • {{ driver.plate }}
+								</option>
+							</select>
+						</label>
+						<label>
+							Cartão RFID
+							<input
+								[(ngModel)]="editDraft.rfidCard"
+								placeholder="UID do cartão"
+							/>
+						</label>
+						<div
+							class="rfid-register"
+							*ngIf="!rfidRegisterMode"
+						>
+							<button
+								class="secondary-btn"
+								type="button"
+								(click)="registerRfidForEdit()"
+							>
+								Cadastrar cartão RFID
+							</button>
+						</div>
+						<div
+							class="rfid-register"
+							*ngIf="rfidRegisterMode"
+						>
+							<button
+								class="secondary-btn"
+								type="button"
+								(click)="cancelRegisterRfid()"
+							>
+								Cancelar leitura
+							</button>
+							<small
+								>Aproxime o cartão RFID do leitor para preencher
+								automaticamente.</small
+							>
+						</div>
+						<label class="edit-photo-field"
+							>Foto do aluno<input
+								type="file"
+								accept="image/*"
+								(change)="onEditPhotoSelected($event)"
+						/></label>
+					</div>
+					<div
+						class="edit-photo-preview"
+						*ngIf="editDraft.photo"
+					>
+						<app-avatar
+							[name]="editDraft.name || ''"
+							[photo]="editDraft.photo"
+							[color]="editDraft.avatarColor || '#C8102E'"
+						></app-avatar>
+						<button
+							class="secondary-btn"
+							type="button"
+							(click)="removeEditPhoto()"
+						>
+							Remover foto
+						</button>
+					</div>
+					<div class="form-actions edit-modal-actions">
+						<button
+							class="danger-btn"
+							type="button"
+							(click)="deleteStudent(editingStudent)"
+						>
+							Excluir aluno</button
+						><span class="action-spacer"></span
+						><button
+							class="secondary-btn"
+							type="button"
+							(click)="cancelEditStudent()"
+						>
+							Cancelar</button
+						><button
+							class="primary-btn"
+							type="button"
+							(click)="saveStudentEdit()"
+						>
+							Salvar alterações
+						</button>
+					</div>
+				</div>
+			</div>
+		</section>
 
-        <div class="driver-grid">
-          <article class="driver-card" *ngFor="let driver of svc.vanDrivers()">
-            <div class="driver-top">
-              <app-avatar [name]="driver.name" [color]="driver.color"></app-avatar>
-              <div>
-                <h3>{{ driver.name }}</h3>
-                <span>{{ driver.plate }}</span>
-                <small *ngIf="driver.phone">{{ driver.phone }}</small>
-              </div>
-            </div>
-            <p>{{ driverStudents(driver).length }} aluno(s) vinculado(s)</p>
-            <ul class="driver-students" *ngIf="driverStudents(driver).length">
-              <li *ngFor="let student of driverStudents(driver)">{{ student.name }} — {{ student.grade }} {{ student.class }}</li>
-            </ul>
-            <button class="primary-btn" type="button" (click)="callDriver(driver)">Chamar motorista</button>
-            <div class="driver-actions">
-              <button class="secondary-btn" type="button" (click)="editVan(driver)">Editar</button>
-              <button class="danger-btn" type="button" (click)="removeVan(driver)">Excluir</button>
-            </div>
-          </article>
-        </div>
-        <div class="empty" *ngIf="!svc.vanDrivers().length">Nenhum motorista cadastrado ainda.</div>
-      </div>
+		<section
+			*ngIf="view === 'van'"
+			class="view"
+		>
+			<div class="section-card">
+				<div class="section-title">
+					<div>
+						<h2>Van Escolar</h2>
+						<p>
+							Cadastro dos motoristas das vans, chamada e alunos vinculados.
+						</p>
+					</div>
+					<button
+						class="primary-btn"
+						type="button"
+						(click)="startVanForm()"
+					>
+						+ Cadastrar motorista
+					</button>
+				</div>
 
-      <div class="active-van-grid" *ngIf="activeVanCalls.length">
-        <article class="call-banner" *ngFor="let call of activeVanCalls">
-          <div>
-            <small>CHAMADA ATIVA</small>
-            <strong>{{ call.driver.name }}</strong>
-            <span>Placa {{ call.driver.plate }} • Chamado às {{ short(call.calledAt) }}</span>
-          </div>
-          <button class="secondary-btn" type="button" (click)="endVanCall(call.driver.id)">Encerrar chamada</button>
-        </article>
-      </div>
-    </section>
+				<div
+					class="success-card form-msg"
+					*ngIf="vanMessage"
+				>
+					{{ vanMessage }}
+				</div>
+				<div
+					class="error-card form-msg"
+					*ngIf="vanError"
+				>
+					{{ vanError }}
+				</div>
 
-    <section *ngIf="view === 'inspetora'" class="view">
-      <div class="section-card">
-        <div class="section-title">
-          <div>
-            <h2>Confirmação de Saída</h2>
-            <p>Confira e confirme os alunos que chegaram à portaria.</p>
-          </div>
-          <span class="badge">{{ queueCount }} aguardando</span>
-        </div>
+				<div
+					class="section-card van-form"
+					*ngIf="vanFormOpen"
+				>
+					<div class="section-title">
+						<div>
+							<h3>
+								{{
+									editingVanId ? 'Editar motorista' : 'Novo motorista de van'
+								}}
+							</h3>
+							<p>Informe o nome do motorista e os dados da van.</p>
+						</div>
+					</div>
+					<div class="form-grid">
+						<label
+							>Nome do motorista<input
+								[(ngModel)]="vanForm.name"
+								placeholder="Ex.: Marcos Almeida"
+						/></label>
+						<label
+							>Placa da van<input
+								[(ngModel)]="vanForm.plate"
+								placeholder="ABC-1D23"
+						/></label>
+						<label
+							>Telefone<input
+								type="tel"
+								[(ngModel)]="vanForm.phone"
+								placeholder="(00) 00000-0000"
+						/></label>
+						<label
+							>Cor do avatar<input
+								class="color-input"
+								type="color"
+								[(ngModel)]="vanForm.color"
+						/></label>
+					</div>
+					<div class="form-actions">
+						<button
+							class="secondary-btn"
+							type="button"
+							(click)="cancelVanForm()"
+						>
+							Cancelar
+						</button>
+						<button
+							class="primary-btn"
+							type="button"
+							(click)="saveVan()"
+						>
+							Salvar motorista
+						</button>
+					</div>
+				</div>
 
-        <div class="queue-list" *ngIf="queueCount">
-          <article class="queue-item" *ngFor="let item of svc.queue()">
-            <app-avatar [small]="true" [name]="item.student.name" [color]="item.student.avatarColor" [photo]="item.student.photo"></app-avatar>
-            <div>
-              <strong>{{ item.student.name }}</strong>
-              <span>{{ item.student.grade }} • Turma {{ item.student.class }}</span>
-              <small>Solicitado às {{ short(item.queuedAt) }}</small>
-              <small *ngIf="item.student.isVan && item.student.vanDriverId">Van: {{ svc.driverName(item.student.vanDriverId) }}</small>
-            </div>
-            <button class="primary-btn" type="button" [disabled]="pending && pending.id !== item.student.id" (click)="confirmExit(item.id)">Confirmar saída</button>
+				<div class="driver-grid">
+					<article
+						class="driver-card"
+						*ngFor="let driver of svc.vanDrivers()"
+					>
+						<div class="driver-top">
+							<app-avatar
+								[name]="driver.name"
+								[color]="driver.color"
+							></app-avatar>
+							<div>
+								<h3>{{ driver.name }}</h3>
+								<span>{{ driver.plate }}</span>
+								<small *ngIf="driver.phone">{{ driver.phone }}</small>
+							</div>
+						</div>
+						<p>{{ driverStudents(driver).length }} aluno(s) vinculado(s)</p>
+						<ul
+							class="driver-students"
+							*ngIf="driverStudents(driver).length"
+						>
+							<li *ngFor="let student of driverStudents(driver)">
+								{{ student.name }} — {{ student.grade }} {{ student.class }}
+							</li>
+						</ul>
+						<button
+							class="primary-btn"
+							type="button"
+							(click)="callDriver(driver)"
+						>
+							Chamar motorista
+						</button>
+						<div class="driver-actions">
+							<button
+								class="secondary-btn"
+								type="button"
+								(click)="editVan(driver)"
+							>
+								Editar
+							</button>
+							<button
+								class="danger-btn"
+								type="button"
+								(click)="removeVan(driver)"
+							>
+								Excluir
+							</button>
+						</div>
+					</article>
+				</div>
+				<div
+					class="empty"
+					*ngIf="!svc.vanDrivers().length"
+				>
+					Nenhum motorista cadastrado ainda.
+				</div>
+			</div>
 
-          </article>
-        </div>
+			<div
+				class="active-van-grid"
+				*ngIf="activeVanCalls.length"
+			>
+				<article
+					class="call-banner"
+					*ngFor="let call of activeVanCalls"
+				>
+					<div>
+						<small>CHAMADA ATIVA</small>
+						<strong>{{ call.driver.name }}</strong>
+						<span
+							>Placa {{ call.driver.plate }} • Chamado às
+							{{ short(call.calledAt) }}</span
+						>
+					</div>
+					<button
+						class="secondary-btn"
+						type="button"
+						(click)="endVanCall(call.driver.id)"
+					>
+						Encerrar chamada
+					</button>
+				</article>
+			</div>
+		</section>
 
-        <div class="queue-list" *ngIf="activeVanCalls.length">
-          <article class="queue-item van-queue-item" *ngFor="let call of activeVanCalls">
-            <app-avatar [small]="true" [name]="call.driver.name" [color]="call.driver.color"></app-avatar>
-            <div>
-              <strong>{{ call.driver.name }}</strong>
-              <span>Motorista da van • {{ call.driver.plate }}</span>
-              <small>Chamado às {{ short(call.calledAt) }}</small>
-            </div>
-            <button class="primary-btn" type="button" (click)="endVanCall(call.driver.id)">Confirmar saída da van</button>
-          </article>
-        </div>
+		<section
+			*ngIf="view === 'inspetora'"
+			class="view"
+		>
+			<div class="section-card">
+				<div class="section-title">
+					<div>
+						<h2>Confirmação de Saída</h2>
+						<p>Confira e confirme os alunos que chegaram à portaria.</p>
+					</div>
+					<span class="badge">{{ queueCount }} aguardando</span>
+				</div>
 
-        <div class="empty" *ngIf="!queueCount && !activeVanCalls.length">Nenhum aluno aguardando confirmação.</div>
-      </div>
-    </section>
+				<div
+					class="queue-list"
+					*ngIf="queueCount"
+				>
+					<article
+						class="queue-item"
+						*ngFor="let item of svc.queue()"
+					>
+						<app-avatar
+							[small]="true"
+							[name]="item.student.name"
+							[color]="item.student.avatarColor"
+							[photo]="item.student.photo"
+						></app-avatar>
+						<div>
+							<strong>{{ item.student.name }}</strong>
+							<span
+								>{{ item.student.grade }} • Turma {{ item.student.class }}</span
+							>
+							<small>Solicitado às {{ short(item.queuedAt) }}</small>
+							<small *ngIf="item.student.isVan && item.student.vanDriverId"
+								>Van: {{ svc.driverName(item.student.vanDriverId) }}</small
+							>
+						</div>
+						<button
+							class="primary-btn"
+							type="button"
+							[disabled]="pending && pending.id !== item.student.id"
+							(click)="confirmExit(item.id)"
+						>
+							Confirmar saída
+						</button>
+					</article>
+				</div>
 
-    <section *ngIf="view === 'relatorio'" class="view">
-      <div class="section-card">
-        <div class="section-title">
-          <div>
-            <h2>Relatório Diário</h2>
-            <p>Histórico de saídas registradas nesta sessão.</p>
-          </div>
-          <button class="secondary-btn" type="button" (click)="printReport()">Imprimir</button>
-        </div>
+				<div
+					class="queue-list"
+					*ngIf="activeVanCalls.length"
+				>
+					<article
+						class="queue-item van-queue-item"
+						*ngFor="let call of activeVanCalls"
+					>
+						<app-avatar
+							[small]="true"
+							[name]="call.driver.name"
+							[color]="call.driver.color"
+						></app-avatar>
+						<div>
+							<strong>{{ call.driver.name }}</strong>
+							<span>Motorista da van • {{ call.driver.plate }}</span>
+							<small>Chamado às {{ short(call.calledAt) }}</small>
+						</div>
+						<button
+							class="primary-btn"
+							type="button"
+							(click)="endVanCall(call.driver.id)"
+						>
+							Confirmar saída da van
+						</button>
+					</article>
+				</div>
 
-        <div class="report-stats">
-          <div><strong>{{ exitCount }}</strong><span>Saídas confirmadas</span></div>
-          <div><strong>{{ queueCount }}</strong><span>Na fila</span></div>
-          <div><strong>{{ svc.students().length }}</strong><span>Alunos cadastrados</span></div>
-          <div><strong>{{ reportByMode.van }}</strong><span>Saíram de van</span></div>
-          <div><strong>{{ reportByMode.responsavel }}</strong><span>Saíram com responsável</span></div>
-        </div>
+				<div
+					class="empty"
+					*ngIf="!queueCount && !activeVanCalls.length"
+				>
+					Nenhum aluno aguardando confirmação.
+				</div>
+			</div>
+		</section>
 
-        <select class="report-filter" [(ngModel)]="reportGrade">
-          <option value="5º Ano A">5º Ano A</option>
-          <option value="5º Ano B">5º Ano B</option>
-        </select>
+		<section
+			*ngIf="view === 'relatorio'"
+			class="view"
+		>
+			<div class="section-card">
+				<div class="section-title">
+					<div>
+						<h2>Relatório Diário</h2>
+						<p>Histórico de saídas registradas nesta sessão.</p>
+					</div>
+					<button
+						class="secondary-btn"
+						type="button"
+						(click)="printReport()"
+					>
+						Imprimir
+					</button>
+				</div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Aluno</th><th>Ano</th><th>Turma</th><th>Saída</th><th>Com quem</th><th>Horário</th></tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let row of reportRows">
-                <td>{{ row.student.name }}</td>
-                <td>{{ row.student.grade }}</td>
-                <td>{{ row.student.class }}</td>
-                <td><span class="exit-tag" [class.exit-tag-van]="row.mode === 'VAN'">{{ row.mode === 'VAN' ? 'Van' : 'Responsável' }}</span></td>
-                <td>{{ row.releasedTo }}</td>
-                <td>{{ short(row.exitAt) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+				<div class="report-stats">
+					<div>
+						<strong>{{ exitCount }}</strong
+						><span>Saídas confirmadas</span>
+					</div>
+					<div>
+						<strong>{{ queueCount }}</strong
+						><span>Na fila</span>
+					</div>
+					<div>
+						<strong>{{ svc.students().length }}</strong
+						><span>Alunos cadastrados</span>
+					</div>
+					<div>
+						<strong>{{ reportByMode.van }}</strong
+						><span>Saíram de van</span>
+					</div>
+					<div>
+						<strong>{{ reportByMode.responsavel }}</strong
+						><span>Saíram com responsável</span>
+					</div>
+				</div>
 
-    <section *ngIf="view === 'cadastro'" class="view">
-      <div class="section-card cadastro-card">
-        <div class="section-title">
-          <div>
-            <h2>Cadastrar Aluno</h2>
-            <p>Preencha os dados do aluno.</p>
-          </div>
-        </div>
+				<select
+					class="report-filter"
+					[(ngModel)]="reportGrade"
+				>
+					<option value="5º Ano A">5º Ano A</option>
+					<option value="5º Ano B">5º Ano B</option>
+				</select>
 
-        <div class="success-card form-msg" *ngIf="cadastroMsg"><strong>{{ cadastroMsg }}</strong></div>
-        <div class="error-card form-msg" *ngIf="cadastroError">{{ cadastroError }}</div>
-        <div class="form-msg" role="note">
-          E-mail do responsável, CPF e data de nascimento do aluno são enviados para a API. Turma e telefone do responsável são mantidos neste navegador até que esses campos também sejam implementados no back-end.
-        </div>
+				<div class="table-wrap">
+					<table>
+						<thead>
+							<tr>
+								<th>Aluno</th>
+								<th>Ano</th>
+								<th>Turma</th>
+								<th>Saída</th>
+								<th>Com quem</th>
+								<th>Horário</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr *ngFor="let row of reportRows">
+								<td>{{ row.student.name }}</td>
+								<td>{{ row.student.grade }}</td>
+								<td>{{ row.student.class }}</td>
+								<td>
+									<span
+										class="exit-tag"
+										[class.exit-tag-van]="row.mode === 'VAN'"
+										>{{ row.mode === 'VAN' ? 'Van' : 'Responsável' }}</span
+									>
+								</td>
+								<td>{{ row.releasedTo }}</td>
+								<td>{{ short(row.exitAt) }}</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</section>
 
-        <div class="form-grid">
-          <label>
-            Nome completo
-            <input [(ngModel)]="cadastroDraft.name" placeholder="Digite o nome do aluno">
-          </label>
+		<section
+			*ngIf="view === 'cadastro'"
+			class="view"
+		>
+			<div class="section-card cadastro-card">
+				<div class="section-title">
+					<div>
+						<h2>Cadastrar Aluno</h2>
+						<p>Preencha os dados do aluno.</p>
+					</div>
+				</div>
 
-          <label>
-            Ano
-            <select [(ngModel)]="cadastroDraft.grade">
-              <option value="">Selecione</option>
-              <option value="5º Ano">5º Ano</option>
-            </select>
-          </label>
+				<div
+					class="success-card form-msg"
+					*ngIf="cadastroMsg"
+				>
+					<strong>{{ cadastroMsg }}</strong>
+				</div>
+				<div
+					class="error-card form-msg"
+					*ngIf="cadastroError"
+				>
+					{{ cadastroError }}
+				</div>
+				<div
+					class="form-msg"
+					role="note"
+				>
+					E-mail do responsável, CPF e data de nascimento do aluno são enviados
+					para a API. Turma e telefone do responsável são mantidos neste
+					navegador até que esses campos também sejam implementados no back-end.
+				</div>
 
-          <label>
-            Turma
-            <select [(ngModel)]="cadastroDraft.class">
-              <option value="">Selecione</option>
-              <option value="A">5º Ano A</option>
-              <option value="B">5º Ano B</option>
-            </select>
-          </label>
+				<div class="form-grid">
+					<label>
+						Nome completo
+						<input
+							[(ngModel)]="cadastroDraft.name"
+							placeholder="Digite o nome do aluno"
+						/>
+					</label>
 
-          <label>
-            E-mail do responsável
-            <input type="email" [(ngModel)]="cadastroDraft.email" placeholder="responsavel@exemplo.com">
-          </label>
+					<label>
+						Ano
+						<select [(ngModel)]="cadastroDraft.grade">
+							<option value="">Selecione</option>
+							<option value="5º Ano">5º Ano</option>
+						</select>
+					</label>
 
-          <label>
-            CPF do aluno
-            <input [(ngModel)]="cadastroDraft.cpf" placeholder="000.000.000-00">
-          </label>
+					<label>
+						Turma
+						<select [(ngModel)]="cadastroDraft.class">
+							<option value="">Selecione</option>
+							<option value="A">5º Ano A</option>
+							<option value="B">5º Ano B</option>
+						</select>
+					</label>
 
-          <label>
-            Data de nascimento
-            <input type="date" [(ngModel)]="cadastroDraft.birthDate">
-          </label>
+					<label>
+						E-mail do responsável
+						<input
+							type="email"
+							[(ngModel)]="cadastroDraft.email"
+							placeholder="responsavel@exemplo.com"
+						/>
+					</label>
 
-          <label>
-            Responsável
-            <input [(ngModel)]="cadastroDraft.parentName" placeholder="Nome do responsável">
-          </label>
+					<label>
+						CPF do aluno
+						<input
+							[(ngModel)]="cadastroDraft.cpf"
+							placeholder="000.000.000-00"
+						/>
+					</label>
 
-          <label>
-            Telefone do responsável
-            <input type="tel" [(ngModel)]="cadastroDraft.guardianPhone" placeholder="(00) 00000-0000">
-          </label>
+					<label>
+						Data de nascimento
+						<input
+							type="date"
+							[(ngModel)]="cadastroDraft.birthDate"
+						/>
+					</label>
 
-          <label>
-            Parentesco
-            <select [(ngModel)]="cadastroDraft.parentRelation">
-              <option>Mãe</option>
-              <option>Pai</option>
-              <option>Avó</option>
-              <option>Avô</option>
-              <option>Responsável legal</option>
-            </select>
-          </label>
+					<label>
+						Responsável
+						<input
+							[(ngModel)]="cadastroDraft.parentName"
+							placeholder="Nome do responsável"
+						/>
+					</label>
 
-          <label>
-            Cartão RFID
-            <input [(ngModel)]="cadastroDraft.rfidCard" placeholder="UID do cartão">
-          </label>
+					<label>
+						Telefone do responsável
+						<input
+							type="tel"
+							[(ngModel)]="cadastroDraft.guardianPhone"
+							placeholder="(00) 00000-0000"
+						/>
+					</label>
 
-          <label>
-            Cor do avatar
-            <input class="color-input" type="color" [(ngModel)]="cadastroDraft.avatarColor">
-          </label>
+					<label>
+						Parentesco
+						<select [(ngModel)]="cadastroDraft.parentRelation">
+							<option>Mãe</option>
+							<option>Pai</option>
+							<option>Avó</option>
+							<option>Avô</option>
+							<option>Responsável legal</option>
+						</select>
+					</label>
 
-          <label>
-            Foto do aluno
-            <input type="file" accept="image/*" (change)="onPhotoSelected($event)">
-          </label>
+					<label>
+						Cartão RFID
+						<input
+							[(ngModel)]="cadastroDraft.rfidCard"
+							placeholder="Aproxime o cartão ou digite o UID"
+							autocomplete="off"
+							[readOnly]="cadastroRfidMode"
+						/>
+					</label>
 
-          <label class="check-label">
-            <input type="checkbox" [(ngModel)]="cadastroDraft.isVan" (ngModelChange)="onCadastroVanChange($event)">
-            <span>Aluno utiliza Van Escolar</span>
-          </label>
+					<div
+						class="rfid-register"
+						*ngIf="!cadastroRfidMode"
+					>
+						<button
+							class="secondary-btn"
+							type="button"
+							(click)="registerRfidForCadastro()"
+						>
+							Cadastrar cartão RFID
+						</button>
+					</div>
+					<div
+						class="rfid-register"
+						*ngIf="cadastroRfidMode"
+					>
+						<button
+							class="secondary-btn"
+							type="button"
+							(click)="cancelRegisterRfidCadastro()"
+						>
+							Cancelar leitura
+						</button>
+						<small
+							>Aproxime o cartão do leitor ESP32 para preencher o UID
+							automaticamente.</small
+						>
+					</div>
 
-          <label>
-            Motorista da van
-            <select [(ngModel)]="cadastroDraft.vanDriverId" [disabled]="!cadastroDraft.isVan">
-              <option [ngValue]="undefined">Selecione o motorista</option>
-              <option *ngFor="let driver of svc.vanDrivers()" [value]="driver.id">{{ driver.name }} • {{ driver.plate }}</option>
-            </select>
-          </label>
-        </div>
+					<label>
+						Foto do aluno
+						<input
+							type="file"
+							accept="image/*"
+							(change)="onPhotoSelected($event)"
+						/>
+					</label>
 
-        <div class="preview">
-          <app-avatar [name]="cadastroDraft.name || ''" [color]="cadastroDraft.avatarColor || '#C8102E'" [photo]="cadastroDraft.photo"></app-avatar>
-          <div>
-            <small>PRÉ-VISUALIZAÇÃO</small>
-            <strong>{{ cadastroDraft.name || 'Nome do aluno' }}</strong>
-            <span>{{ cadastroDraft.grade || 'Ano' }} • Turma {{ cadastroDraft.class || '-' }}</span>
-          </div>
-          <button class="secondary-btn photo-remove" type="button" *ngIf="cadastroDraft.photo" (click)="removePhoto()">Remover foto</button>
-        </div>
+					<label class="check-label">
+						<input
+							type="checkbox"
+							[(ngModel)]="cadastroDraft.isVan"
+							(ngModelChange)="onCadastroVanChange($event)"
+						/>
+						<span>Aluno utiliza Van Escolar</span>
+					</label>
 
-        <div class="form-actions">
-          <button class="secondary-btn" type="button" (click)="resetCadastro()">Limpar</button>
-          <button class="primary-btn" type="button" [disabled]="!cadastroValid" (click)="saveCadastro()">
-            Cadastrar aluno
-          </button>
-        </div>
-      </div>
-    </section>
+					<label>
+						Motorista da van
+						<select
+							[(ngModel)]="cadastroDraft.vanDriverId"
+							[disabled]="!cadastroDraft.isVan"
+						>
+							<option [ngValue]="undefined">Selecione o motorista</option>
+							<option
+								*ngFor="let driver of svc.vanDrivers()"
+								[value]="driver.id"
+							>
+								{{ driver.name }} • {{ driver.plate }}
+							</option>
+						</select>
+					</label>
+				</div>
 
-  </main>
+				<div class="preview">
+					<app-avatar
+						[name]="cadastroDraft.name || ''"
+						[color]="cadastroDraft.avatarColor || '#C8102E'"
+						[photo]="cadastroDraft.photo"
+					></app-avatar>
+					<div>
+						<small>PRÉ-VISUALIZAÇÃO</small>
+						<strong>{{ cadastroDraft.name || 'Nome do aluno' }}</strong>
+						<span
+							>{{ cadastroDraft.grade || 'Ano' }} • Turma
+							{{ cadastroDraft.class || '-' }}</span
+						>
+					</div>
+					<button
+						class="secondary-btn photo-remove"
+						type="button"
+						*ngIf="cadastroDraft.photo"
+						(click)="removePhoto()"
+					>
+						Remover foto
+					</button>
+				</div>
+
+				<div class="form-actions">
+					<button
+						class="secondary-btn"
+						type="button"
+						(click)="resetCadastro()"
+					>
+						Limpar
+					</button>
+					<button
+						class="primary-btn"
+						type="button"
+						[disabled]="!cadastroValid"
+						(click)="saveCadastro()"
+					>
+						Cadastrar aluno
+					</button>
+				</div>
+			</div>
+		</section>
+	</main>
+
+	<!-- ==================================================================
+	     Aviso sobreposto: confirmar se o aluno é filho de quem retirou.
+	     Nada é enviado ao back-end (fila/TV) antes da confirmação.
+	     ================================================================== -->
+	<div
+		class="child-confirm-backdrop"
+		*ngIf="childConfirm"
+		(click)="retryCardRead()"
+	>
+		<div
+			class="child-confirm-dialog"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Confirmar aluno"
+			(click)="$event.stopPropagation()"
+		>
+			<small class="child-confirm-tag">CARTÃO LIDO</small>
+			<app-avatar
+				[name]="childConfirm.nome"
+				[photo]="childConfirm.fotoUrl || undefined"
+				color="#C8102E"
+			></app-avatar>
+			<h2>{{ childConfirm.nome }}</h2>
+			<p
+				*ngIf="childConfirm.detalhe"
+				class="child-confirm-detail"
+			>
+				{{ childConfirm.detalhe }}
+			</p>
+			<div
+				class="child-confirm-already"
+				*ngIf="childConfirm.jaChamado"
+			>
+				Aluno já chamado e aguardando na portaria.
+			</div>
+			<strong class="child-confirm-question">É seu filho?</strong>
+			<div class="child-confirm-actions">
+				<button
+					class="secondary-btn"
+					type="button"
+					[disabled]="childConfirmBusy"
+					(click)="retryCardRead()"
+				>
+					{{ childConfirm.jaChamado ? 'Fechar' : 'Não — tentar novamente' }}
+				</button>
+				<button
+					class="primary-btn"
+					type="button"
+					[disabled]="childConfirmBusy"
+					(click)="acceptChild()"
+				>
+					{{
+						childConfirmBusy
+							? 'Enviando...'
+							: childConfirm.jaChamado
+								? 'Chamar novamente'
+								: 'Sim, é meu filho'
+					}}
+				</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Aviso sobreposto da chamada manual -->
+	<div
+		class="child-confirm-backdrop"
+		*ngIf="pending && view === 'manual'"
+		(click)="cancelManual()"
+	>
+		<div
+			class="child-confirm-dialog"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Confirmar chamada manual"
+			(click)="$event.stopPropagation()"
+		>
+			<small class="child-confirm-tag">CHAMADA MANUAL</small>
+			<app-avatar
+				[name]="pending.name"
+				[photo]="pending.photo"
+				[color]="pending.avatarColor"
+			></app-avatar>
+			<h2>{{ pending.name }}</h2>
+			<p class="child-confirm-detail">
+				{{ pending.grade }} • Turma {{ pending.class }}
+			</p>
+			<div
+				class="child-confirm-already"
+				*ngIf="svc.isCalled(pending.id)"
+			>
+				Aluno já chamado e aguardando na portaria.
+			</div>
+			<strong class="child-confirm-question">É seu filho?</strong>
+			<div class="child-confirm-actions">
+				<button
+					class="secondary-btn"
+					type="button"
+					[disabled]="manualConfirmBusy"
+					(click)="cancelManual()"
+				>
+					{{ svc.isCalled(pending.id) ? 'Fechar' : 'Não — tentar novamente' }}
+				</button>
+				<button
+					class="primary-btn"
+					type="button"
+					[disabled]="manualConfirmBusy"
+					(click)="confirmManual()"
+				>
+					{{
+						manualConfirmBusy
+							? 'Enviando...'
+							: svc.isCalled(pending.id)
+								? 'Chamar novamente'
+								: 'Sim, é meu filho'
+					}}
+				</button>
+			</div>
+		</div>
+	</div>
 </div>

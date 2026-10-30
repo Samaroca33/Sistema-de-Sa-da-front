@@ -7,18 +7,11 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { PortariaService } from './core/portaria.service';
-import { ExitMode, Student, VanDriver } from './models/models';
+import { AuthService } from './core/auth.service';
+import { ExitMode, Student, VanDriver, View } from './models/models';
 import { AvatarComponent } from './shared/avatar.component';
 import { TvComponent } from './tv/tv.component';
-
-type View =
-	| 'portaria'
-	| 'manual'
-	| 'van'
-	| 'inspetora'
-	| 'tv'
-	| 'relatorio'
-	| 'cadastro';
+import { LoginComponent } from './login.component';
 
 interface NavItem {
 	key: View;
@@ -29,7 +22,7 @@ interface NavItem {
 @Component({
 	selector: 'app-root',
 	standalone: true,
-	imports: [CommonModule, FormsModule, AvatarComponent, TvComponent],
+	imports: [CommonModule, FormsModule, AvatarComponent, TvComponent, LoginComponent],
 	templateUrl: './app.component.html',
 })
 export class AppComponent implements OnDestroy {
@@ -38,6 +31,16 @@ export class AppComponent implements OnDestroy {
 
 	/** A TV abre em outra janela, com o endereço terminado em #tv */
 	readonly isTv = location.hash.toLowerCase().startsWith('#tv');
+
+	/** Controle de tela cheia (portaria e TV). */
+	fullscreenMode = false;
+	/** Só fica true quando o usuário TENTA sair da tela cheia. */
+	fullscreenExitPrompt = false;
+	fullscreenPinInput = '';
+	newFullscreenPin = '';
+	fullscreenPinError = '';
+	fullscreenPinSuccess = '';
+	fullscreenPinSubmitting = false;
 
 	readonly navItems: NavItem[] = [
 		{ key: 'portaria', label: 'Portaria', icon: '📡' },
@@ -67,6 +70,8 @@ export class AppComponent implements OnDestroy {
 	deletingStudentId: string | null = null;
 	editError = '';
 	editMessage = '';
+	/** Aguarda a próxima leitura do leitor RFID para vincular um cartão ao aluno em edição. */
+	rfidRegisterMode = false;
 	pending: Student | null = null;
 	manualConfirmed: Student | null = null;
 
@@ -94,13 +99,34 @@ export class AppComponent implements OnDestroy {
 	cadastroError = '';
 	readerStatus = 'Leitor desconectado';
 	readerConnected = false;
-	unknownCard = '';
+	/** Último UID lido pelo leitor, exibido na tela da portaria. */
+	lastUid = '';
+	private lastUidAt = 0;
+	unknownCard = false;
 	guardianChoices: Array<{
 		alunoId: number;
 		nome: string;
 		fotoUrl?: string | null;
 	}> = [];
 	pendingGuardianUid = '';
+	/**
+	 * Cartão lido e aguardando a confirmação "é seu filho?".
+	 * Nada é enviado à API enquanto este objeto estiver preenchido.
+	 */
+	childConfirm: {
+		uid: string;
+		nome: string;
+		fotoUrl?: string | null;
+		detalhe?: string;
+		alunoId?: number;
+		/** true quando o aluno já tem chamada pendente na fila. */
+		jaChamado?: boolean;
+	} | null = null;
+	childConfirmBusy = false;
+	/** Bloqueia o botão "Sim" da chamada manual durante o envio. */
+	manualConfirmBusy = false;
+	/** Mensagem de sucesso após confirmar a chamada. */
+	successNotice = '';
 	apiActionError = '';
 	private serialPort: any = null;
 	private serialReader: any = null;
@@ -110,8 +136,110 @@ export class AppComponent implements OnDestroy {
 
 	constructor(
 		public svc: PortariaService,
+		public authService: AuthService,
 		private cdr: ChangeDetectorRef,
-	) {}
+	) {
+		// Define a view padrão e filtra o menu conforme o papel do usuário logado.
+		if (authService.isAuthenticated()) {
+			this.view = authService.getDefaultView();
+		}
+	}
+
+	/** Retorna apenas os itens de menu que o usuário logado pode acessar. */
+	get filteredNavItems(): NavItem[] {
+		if (!this.authService.isAuthenticated()) return [];
+		return this.navItems.filter((item) => this.authService.canAccessView(item.key));
+	}
+
+	// ---------------------------------------------------------------
+	// Tela cheia com código PIN (só para Portaria e TV)
+	// ---------------------------------------------------------------
+	toggleFullscreen(): void {
+		const allowed = this.view === 'portaria' || this.view === 'tv';
+		if (!allowed) return;
+		if (!this.fullscreenMode) {
+			// Entra em tela cheia sem pedir código.
+			void this.enterFullscreen();
+		} else {
+			// Tentou sair: só agora aparece o pedido do PIN.
+			this.openFullscreenExitPrompt();
+		}
+	}
+
+	private async enterFullscreen(): Promise<void> {
+		this.fullscreenMode = true;
+		this.closeFullscreenExitPrompt();
+		try {
+			if (!document.fullscreenElement) {
+				await document.documentElement.requestFullscreen?.();
+			}
+		} catch {
+			// Navegador pode recusar a API; a tela cheia "virtual" continua ativa.
+		}
+	}
+
+	private openFullscreenExitPrompt(): void {
+		this.fullscreenExitPrompt = true;
+		this.fullscreenPinInput = '';
+		this.fullscreenPinError = '';
+		this.fullscreenPinSuccess = '';
+		this.newFullscreenPin = '';
+		this.fullscreenPinSubmitting = false;
+	}
+
+	cancelFullscreenExit(): void {
+		this.closeFullscreenExitPrompt();
+	}
+
+	private closeFullscreenExitPrompt(): void {
+		this.fullscreenExitPrompt = false;
+		this.fullscreenPinInput = '';
+		this.fullscreenPinError = '';
+	}
+
+	async exitFullscreenWithPin(): Promise<void> {
+		if (this.fullscreenPinSubmitting) return;
+		this.fullscreenPinError = '';
+		if (!this.fullscreenPinInput.trim()) {
+			this.fullscreenPinError = 'Digite o código para sair da tela cheia.';
+			return;
+		}
+		this.fullscreenPinSubmitting = true;
+		try {
+			if (document.fullscreenElement) {
+				await document.exitFullscreen?.();
+			}
+		} catch {
+			// Se o navegador recusar, sai apenas da tela cheia "virtual".
+		} finally {
+			this.fullscreenMode = false;
+			this.fullscreenPinSubmitting = false;
+			this.closeFullscreenExitPrompt();
+		}
+	}
+
+	changeFullscreenPin(newPin: string): void {
+		const pin = String(newPin ?? '').trim();
+		this.fullscreenPinSuccess = '';
+		this.fullscreenPinError = '';
+		if (!/^[0-9]{4,8}$/.test(pin)) {
+			this.fullscreenPinError = 'O código deve ter de 4 a 8 dígitos numéricos.';
+			return;
+		}
+		this.authService.saveFullscreenPin(pin);
+		this.newFullscreenPin = '';
+		this.fullscreenPinSuccess = 'Código atualizado com sucesso.';
+	}
+
+	@HostListener('document:fullscreenchange')
+	onFullscreenChange(): void {
+		// Fechar a tela cheia do navegador (ESC) também libera o overlay do PIN.
+		if (!document.fullscreenElement) {
+			this.fullscreenMode = false;
+			this.fullscreenPinSubmitting = false;
+			this.closeFullscreenExitPrompt();
+		}
+	}
 
 	ngOnDestroy(): void {
 		clearInterval(this.timer);
@@ -126,8 +254,21 @@ export class AppComponent implements OnDestroy {
 				'Este navegador não oferece Web Serial. Use Chrome ou Edge em localhost/HTTPS.';
 			return;
 		}
+		if (this.readerConnected && this.serialPort) {
+			this.readerStatus = 'ESP32 já conectado';
+			return;
+		}
+		// Se já houve autorização antes, reconecta na mesma porta sem pedir de novo.
+		if (!this.serialPort && serial.getPorts) {
+			try {
+				const granted = await serial.getPorts();
+				if (granted?.length) this.serialPort = granted[0];
+			} catch {
+				/* precisa escolher a porta manualmente */
+			}
+		}
 		try {
-			this.serialPort = await serial.requestPort();
+			if (!this.serialPort) this.serialPort = await serial.requestPort();
 			await this.serialPort.open({ baudRate: 115200 });
 			this.readerConnected = true;
 			this.readerStatus = 'ESP32 conectado — aguardando UID';
@@ -143,26 +284,56 @@ export class AppComponent implements OnDestroy {
 				const lines = buffer.split(/\r?\n/);
 				buffer = lines.pop() ?? '';
 				for (const line of lines) {
-					const uid = line.trim();
-					if (uid && !/SISTEMA|RFID|LEITOR|INICIADO/i.test(uid)) {
-						const cleanUid = uid.replace(/^UID\s*[:=]\s*/i, '').trim();
-						if (cleanUid) {
-							this.cardId = cleanUid;
-							// Sem await: o loop continua lendo a serial imediatamente.
-							// Sem isso, uma leitura lenta bloqueia o leitor e as
-							// próximas passadas de cartão são perdidas.
-							void this.handleScannedUid(cleanUid);
-						}
-					}
+					const uid = this.extractUid(line);
+					if (!uid) continue;
+					// O ESP32 repete a mesma linha enquanto o cartão fica no leitor:
+					// ignora repetições em menos de 2 s para não duplicar a chamada.
+					const now = Date.now();
+					if (uid === this.lastUid && now - this.lastUidAt < 2000) continue;
+					this.lastUid = uid;
+					this.lastUidAt = now;
+					// Preenche o campo com o UID lido e processa na hora.
+					this.cardId = uid;
+					this.cdr.markForCheck();
+					// Sem await: o loop continua lendo a serial imediatamente.
+					// Sem isso, uma leitura lenta bloqueia o leitor e as
+					// próximas passadas de cartão são perdidas.
+					void this.handleScannedUid(uid);
 				}
 			}
 			await pipePromise.catch(() => undefined);
+			if (this.reading) {
+				this.readerStatus = 'Leitor desconectado (cabo removido?)';
+			}
 		} catch (error) {
 			this.readerStatus =
 				'Não foi possível conectar ao ESP32. Verifique o cabo e a porta selecionada.';
-			this.readerConnected = false;
 			console.error('Erro no leitor serial', error);
+		} finally {
+			this.readerConnected = false;
+			this.serialReader = null;
+			this.serialPort = null;
+			this.reading = false;
 		}
+	}
+
+	/**
+	 * Extrai o UID de uma linha enviada pelo ESP32.
+	 * Aceita "UID: 04A1B2C3", "04A1B2C3" e "04 A1 B2 C3" e ignora mensagens
+	 * de status do firmware (inicialização, "aguardando cartão" etc.).
+	 */
+	private extractUid(line: string): string {
+		const text = String(line ?? '').replace(/\u0000/g, '').trim();
+		if (!text) return '';
+		// Mensagens de diagnóstico do firmware não são UIDs.
+		if (/SISTEMA|RFID|LEITOR|INICIADO|CART[AÃ]O|AGUARDANDO|LENDO/i.test(text))
+			return '';
+		const explicit = text.match(/UID\s*[:=]?\s*([0-9A-Fa-f\s]{4,32})/i);
+		const raw = explicit?.[1] ?? text;
+		const uid = raw.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+		// UID RFID tem 4 a 10 bytes (8 a 20 caracteres hex).
+		if (uid.length < 4 || uid.length > 20) return '';
+		return uid;
 	}
 
 	async disconnectReader(): Promise<void> {
@@ -189,16 +360,96 @@ export class AppComponent implements OnDestroy {
 	}
 
 	private async handleScannedUid(uid: string): Promise<void> {
-		// Ignora reenvios do mesmo cartão enquanto um pedido está em andamento,
-		// para não disparar duas chamadas para a mesma passada.
-		if (this.readInFlight) return;
-		this.readInFlight = true;
-		this.cardId = uid;
-		this.unknownCard = '';
+		// Modo cadastro de cartão no formulário "Cadastrar Aluno": apenas preenche o UID.
+		if (this.cadastroRfidMode) {
+			const clean = this.normalizeCard(uid);
+			const jaEmUso = this.svc
+				.students()
+				.find((s) => this.normalizeCard(s.rfidCard) === clean);
+			this.cardId = '';
+			if (jaEmUso) {
+				this.cadastroError = `Este cartão já está cadastrado para ${jaEmUso.name}. Aproxime outro cartão.`;
+				this.cdr.detectChanges();
+				return;
+			}
+			this.cadastroDraft.rfidCard = clean;
+			this.cadastroRfidMode = false;
+			this.cadastroError = '';
+			this.readerStatus = `UID lido: ${clean}`;
+			this.cdr.detectChanges();
+			return;
+		}
+
+		// Modo cadastro de cartão na edição do aluno: captura o UID lido e
+		// preenche o draft, sem consultar o back-end de portaria.
+		if (this.rfidRegisterMode) {
+			this.cardId = uid;
+			this.unknownCard = false;
+			this.apiActionError = '';
+			this.editError = '';
+			this.editMessage = '';
+			const clean = this.normalizeCard(uid);
+			const jaEmUso = this.svc
+				.students()
+				.find(
+					(s) =>
+						s.id !== this.editingStudent?.id &&
+						this.normalizeCard(s.rfidCard) === clean,
+				);
+			if (jaEmUso) {
+				this.editError = `Este cartão já está cadastrado para ${jaEmUso.name}. Aproxime outro cartão.`;
+				this.cardId = '';
+				this.cdr.detectChanges();
+				return;
+			}
+			this.editDraft.rfidCard = clean;
+			this.rfidRegisterMode = false;
+			this.editMessage = `Cartão ${clean} lido. Clique em "Salvar alterações" para gravar no aluno.`;
+			this.readerStatus = `UID lido: ${clean}`;
+			this.cardId = '';
+			this.cdr.detectChanges();
+			return;
+		}
+
+		// Identificação local: o cartão lido é de um aluno já carregado?
+		const clean = this.normalizeCard(uid);
+		const localStudent = this.svc
+			.students()
+			.find((s) => this.normalizeCard(s.rfidCard) === clean);
+
+		this.cardId = '';
+		this.unknownCard = false;
 		this.apiActionError = '';
 		this.guardianChoices = [];
+		this.successNotice = '';
+
+		if (localStudent) {
+			// Já está chamado? Mostra o aviso com a opção de reenviar a chamada
+			// (o aluno pode ser chamado novamente, ex.: não ouviu o primeiro aviso).
+			const jaChamado = this.svc.isCalled(localStudent.id);
+			this.childConfirm = {
+				uid: clean,
+				nome: localStudent.name,
+				fotoUrl: localStudent.photo,
+				detalhe: `${localStudent.grade} • Turma ${localStudent.class}`,
+				alunoId: Number(localStudent.id) || undefined,
+				jaChamado,
+			};
+			if (jaChamado) {
+				this.readerStatus = `${localStudent.name} já está na fila. Use "Chamar novamente" se precisar repetir o aviso.`;
+			}
+			this.readerStatus = `Cartão de ${localStudent.name} lido. Confirme na tela.`;
+			return;
+		}
+
+		// Não achou localmente: consulta a API apenas para IDENTIFICAR o cartão.
+		// ATENÇÃO: /leituras registra a chamada no back-end e coloca o aluno na
+		// fila da TV. Por isso ela só pode ser chamada depois do "Sim, é meu
+		// filho" — nunca aqui.
+		if (this.readInFlight) return;
+		this.readInFlight = true;
 		try {
-			const result = await this.svc.processRfidRead(uid, 'PORTARIA');
+			const result = await this.svc.identifyCard(uid);
 			if (result.confirmacaoNecessaria) {
 				this.pendingGuardianUid = uid;
 				this.guardianChoices = result.alunos ?? [];
@@ -206,21 +457,28 @@ export class AppComponent implements OnDestroy {
 					'Cartão de responsável reconhecido. Selecione o aluno.';
 				return;
 			}
-			// A lista de alunos já está carregada em memória: nada de rebaixar
-			// /alunos e /cartoes a cada cartão passado.
-			const call = result.chamada;
-			const student = call
-				? this.svc.students().find((item) => item.id === String(call.alunoId))
-				: undefined;
-			this.confirmed = student ?? null;
-			this.readerStatus = call
-				? `Leitura processada para ${call.nomeExibicao}.`
-				: 'Leitura processada pela API.';
-			this.cardId = '';
-			if (this.confirmed) setTimeout(() => (this.confirmed = null), 3500);
+			const aluno = result.aluno;
+			if (!aluno) {
+				this.unknownCard = true;
+				this.readerStatus = 'A API não reconheceu o cartão.';
+				return;
+			}
+			const jaChamado = this.svc.isCalled(aluno.alunoId);
+			this.childConfirm = {
+				uid,
+				nome: aluno.nome,
+				fotoUrl: aluno.fotoUrl,
+				detalhe: aluno.detalhe,
+				alunoId: aluno.alunoId,
+				jaChamado,
+			};
+			if (jaChamado) {
+				this.readerStatus = `${aluno.nome} já está na fila. Use "Chamar novamente" se precisar repetir o aviso.`;
+			}
+			this.readerStatus = `Cartão de ${aluno.nome} lido. Confirme na tela.`;
 		} catch (error) {
-			console.error('Falha ao processar UID na API', error);
-			this.unknownCard = uid;
+			console.error('Falha ao identificar o cartão na API', error);
+			this.unknownCard = true;
 			this.readerStatus =
 				'A API não reconheceu o cartão ou não foi possível conectar.';
 			this.apiActionError =
@@ -228,6 +486,60 @@ export class AppComponent implements OnDestroy {
 		} finally {
 			this.readInFlight = false;
 		}
+	}
+
+	/** "Sim, é meu filho": registra a chamada e envia o aluno para a inspetora. */
+	async acceptChild(): Promise<void> {
+		const current = this.childConfirm;
+		if (!current || this.childConfirmBusy) return;
+		this.childConfirmBusy = true;
+		this.apiActionError = '';
+		try {
+			const student = current.alunoId
+				? this.svc
+						.students()
+						.find((s) => s.id === String(current.alunoId))
+				: undefined;
+			if (student) {
+				await this.svc.callManual(student);
+			} else {
+				await this.svc.confirmGuardianRead(current.uid, current.alunoId ?? 0);
+				await this.svc.loadStudents();
+			}
+			this.successNotice = current.jaChamado
+				? `Chamada de ${current.nome} reenviada para a TV.`
+				: `${current.nome} foi avisado(a) e está a caminho da portaria.`;
+			this.readerStatus = 'Chamada enviada para a inspetora.';
+			this.childConfirm = null;
+		} catch (error) {
+			console.error('Falha ao confirmar a chamada do aluno', error);
+			this.apiActionError =
+				'Não foi possível registrar a chamada no back-end.';
+		} finally {
+			this.childConfirmBusy = false;
+		}
+	}
+
+	/** "Não, tentar novamente": descarta o cartão e volta a aguardar a leitura. */
+	retryCardRead(): void {
+		this.childConfirm = null;
+		this.childConfirmBusy = false;
+		this.successNotice = '';
+		this.unknownCard = false;
+		this.apiActionError = '';
+		this.cardId = '';
+		this.lastUid = '';
+		this.lastUidAt = 0;
+		this.readerStatus = 'Aguardando novo cartão...';
+		this.focusRfidInput();
+	}
+
+	/** Devolve o foco ao campo invisivel para o leitor USB continuar funcionando. */
+	private focusRfidInput(): void {
+		setTimeout(() => {
+			const input = document.querySelector<HTMLInputElement>('.rfid-input');
+			input?.focus({ preventScroll: true });
+		}, 0);
 	}
 
 	async confirmGuardianStudent(choice: {
@@ -269,6 +581,12 @@ export class AppComponent implements OnDestroy {
 
 	@HostListener('document:keydown.escape')
 	onEscape(): void {
+		// Com o pedido de PIN aberto, ESC apenas cancela (a tela cheia continua).
+		if (this.fullscreenExitPrompt) {
+			this.cancelFullscreenExit();
+			return;
+		}
+		if (this.fullscreenMode) return;
 		this.cardId = '';
 		this.detected = null;
 		this.demoOpen = false;
@@ -280,7 +598,21 @@ export class AppComponent implements OnDestroy {
 		window.open(`${location.pathname}#tv`, 'portaria-tv');
 	}
 
+	@HostListener('document:click')
+	onDocumentClick(): void {
+		// O leitor USB "digita" como teclado: o campo invisivel precisa estar
+		// focado. Cliques no meio do conteudo devolvem o foco para ele.
+		if (this.view !== 'portaria' || !this.authService.isAuthenticated()) return;
+		const active = document.activeElement as HTMLElement | null;
+		if (active?.closest('input, select, textarea, button, a')) return;
+		this.focusRfidInput();
+	}
+
 	nav(view: View): void {
+		if (!this.authService.canAccessView(view)) return;
+		this.fullscreenMode = false;
+		this.closeFullscreenExitPrompt();
+		if (document.fullscreenElement) void document.exitFullscreen?.();
 		if (view === 'tv') {
 			this.openTv();
 			return;
@@ -483,29 +815,50 @@ export class AppComponent implements OnDestroy {
 		this.detected = null;
 	}
 
+	/** Abre o aviso "é seu filho?" para a chamada manual (nada é enviado ainda). */
 	selectManual(student: Student): void {
-		if (this.isQueued(student)) return;
+		// Mesmo que o aluno já esteja na fila, abre o aviso: ele pode querer
+		// reenviar a chamada (aluno não ouviu o aviso na TV).
 		this.pending = student;
 		this.manualConfirmed = null;
+		this.apiActionError = '';
+		this.successNotice = '';
+		// Fecha o aviso de leitura do cartão, se estiver aberto.
+		this.childConfirm = null;
 	}
 
+	/**
+	 * "Sim, é meu filho" na chamada manual: só aqui o aluno é enviado ao
+	 * back-end (POST /chamadas/manual) e aparece na fila e na TV.
+	 */
 	async confirmManual(): Promise<void> {
-		if (!this.pending || this.isQueued(this.pending)) return;
 		const student = this.pending;
+		if (!student || this.manualConfirmBusy) return;
+		const jaChamado = this.svc.isCalled(student.id);
+		this.manualConfirmBusy = true;
+		this.apiActionError = '';
 		try {
 			await this.svc.callManual(student);
 			this.manualConfirmed = student;
+			this.successNotice = jaChamado
+				? `Chamada de ${student.name} reenviada para a TV.`
+				: `${student.name} foi avisado(a) e está a caminho da portaria.`;
 			this.pending = null;
-			setTimeout(() => (this.manualConfirmed = null), 3000);
+			setTimeout(() => (this.manualConfirmed = null), 4000);
 		} catch (error) {
 			console.error('Falha ao registrar chamada manual', error);
 			this.apiActionError =
 				'Não foi possível registrar a chamada manual no back-end.';
+		} finally {
+			this.manualConfirmBusy = false;
 		}
 	}
 
+	/** "Não — tentar novamente": fecha o aviso e volta à lista de alunos. */
 	cancelManual(): void {
 		this.pending = null;
+		this.manualConfirmBusy = false;
+		this.successNotice = '';
 	}
 
 	/** Nome do motorista vinculado ao aluno (vazio quando não houver). */
@@ -654,6 +1007,31 @@ export class AppComponent implements OnDestroy {
 		this.editingStudent = null;
 		this.editDraft = {};
 		this.editError = '';
+		this.rfidRegisterMode = false;
+	}
+
+	/** Inicia a leitura do próximo cartão aproximado para vinculá-lo ao aluno em edição. */
+	registerRfidForEdit(): void {
+		if (!this.editingStudent) return;
+		this.editError = '';
+		this.editMessage = '';
+		this.rfidRegisterMode = true;
+		this.cardId = '';
+		if (!this.readerConnected) {
+			// Abre o seletor de porta do Web Serial na hora do cadastro.
+			this.readerStatus = 'Conecte o leitor ESP32 para capturar o cartão...';
+			void this.connectReader();
+		}
+		this.readerStatus = this.readerConnected
+			? 'Aproxime o cartão do leitor para cadastrar o UID.'
+			: this.readerStatus;
+	}
+
+	cancelRegisterRfid(): void {
+		this.rfidRegisterMode = false;
+		this.cardId = '';
+		this.editMessage = '';
+		this.editError = '';
 	}
 
 	onEditPhotoSelected(event: Event): void {
@@ -737,8 +1115,25 @@ export class AppComponent implements OnDestroy {
 				grade: this.editDraft.grade || '5º Ano',
 				class: this.editDraft.class || 'A',
 			} as Student;
+			const alunoId = this.editingStudent.id;
 			await this.svc.updateStudent(updated);
-			this.editMessage = 'Dados atualizados.';
+			// Vincula o cartão RFID informado/ lido na edição, quando diferente do atual.
+			const novoUid = this.normalizeCard(this.editDraft.rfidCard);
+			const uidAtual = this.normalizeCard(this.editingStudent.rfidCard);
+			if (novoUid && novoUid !== uidAtual) {
+				try {
+					await this.svc.registerCard(alunoId, novoUid);
+					await this.svc.loadStudents();
+				} catch (error) {
+					console.error('Falha ao vincular cartão RFID', error);
+					this.editError = `Dados do aluno salvos, mas o cartão ${novoUid} não foi vinculado. Verifique se o UID já pertence a outro cadastro (POST /api/cartoes).`;
+					return;
+				}
+			}
+			this.rfidRegisterMode = false;
+			this.editMessage = novoUid && novoUid !== uidAtual
+				? 'Dados e cartão RFID atualizados.'
+				: 'Dados atualizados.';
 			this.editingStudent = null;
 			this.editDraft = {};
 		} catch (error) {
@@ -814,16 +1209,6 @@ export class AppComponent implements OnDestroy {
 		if (!this.cadastroValid) return;
 
 		const d = this.cadastroDraft;
-		const rfid = this.normalizeCard(d.rfidCard);
-		if (
-			rfid &&
-			this.svc.students().some((s) => this.normalizeCard(s.rfidCard) === rfid)
-		) {
-			this.cadastroError =
-				'Este cartão RFID já está cadastrado para outro aluno.';
-			return;
-		}
-
 		try {
 			const student = await this.svc.addStudent({
 				name: d.name!.trim(),
@@ -835,13 +1220,16 @@ export class AppComponent implements OnDestroy {
 				cpf: d.cpf?.trim(),
 				birthDate: d.birthDate,
 				guardianPhone: d.guardianPhone?.trim(),
-				rfidCard: rfid,
+				rfidCard: this.normalizeCard(d.rfidCard),
+				avatarColor: '#C8102E',
 				isVan: !!d.isVan,
 				vanDriverId: d.isVan ? d.vanDriverId : undefined,
-				avatarColor: d.avatarColor || '#C8102E',
 				photo: d.photo,
 			});
-			this.cadastroMsg = `${student.name} foi cadastrado(a) com sucesso.`;
+			this.cadastroMsg = d.rfidCard?.trim()
+				? `${student.name} foi cadastrado(a) com o cartão ${this.normalizeCard(d.rfidCard)}.`
+				: `${student.name} foi cadastrado(a) com sucesso.`;
+			this.cadastroRfidMode = false;
 			this.cadastroDraft = this.newCadastroDraft();
 		} catch (error) {
 			console.error('Falha ao cadastrar aluno na API', error);
@@ -864,9 +1252,31 @@ export class AppComponent implements OnDestroy {
 			rfidCard: '',
 			isVan: false,
 			vanDriverId: undefined,
-			avatarColor: '#C8102E',
 			photo: undefined,
 		};
+	}
+
+	// ---------------------------------------------------------------
+	// Cadastro de aluno: captura do cartão RFID pelo leitor
+	// ---------------------------------------------------------------
+	/** True enquanto aguarda a aproximação do cartão no formulário de cadastro. */
+	cadastroRfidMode = false;
+
+	registerRfidForCadastro(): void {
+		this.cadastroError = '';
+		this.cadastroMsg = '';
+		this.cadastroRfidMode = true;
+		if (!this.readerConnected) {
+			this.readerStatus = 'Conecte o leitor ESP32 para capturar o cartão...';
+			void this.connectReader();
+		}
+		this.readerStatus = this.readerConnected
+			? 'Aproxime o cartão do leitor para preencher o UID.'
+			: this.readerStatus;
+	}
+
+	cancelRegisterRfidCadastro(): void {
+		this.cadastroRfidMode = false;
 	}
 
 	printReport(): void {

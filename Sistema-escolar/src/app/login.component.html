@@ -1,0 +1,59 @@
+<div class="login-page">
+	<div class="login-card">
+		<div class="login-brand">
+			<div class="brand-mark">EM</div>
+			<h1>Escola Municipal</h1>
+			<p>Sistema de Saída de Alunos</p>
+		</div>
+
+		<div class="lockout-msg" *ngIf="isLockedOut()">
+			Conta bloqueada por muitas tentativas. Tente novamente em {{ lockoutMinutes }} minuto(s).
+		</div>
+
+		<div class="error-msg" *ngIf="error">{{ error }}</div>
+
+		<form (submit)="onSubmit($event)" novalidate>
+			<label class="form-label">Usuário</label>
+			<input
+				type="text"
+				class="form-input"
+				[(ngModel)]="username"
+				name="username"
+				placeholder="Usuário"
+				autocomplete="username"
+				[disabled]="loading || isLockedOut()">
+
+			<div class="password-wrapper">
+				<label class="form-label">Senha</label>
+				<input
+					type="{{ passwordFieldType }}"
+					class="form-input"
+					[(ngModel)]="password"
+					name="password"
+					placeholder="Senha"
+					autocomplete="current-password"
+					[disabled]="loading || isLockedOut()">
+				<button type="button" class="password-toggle" (click)="toggleShowPassword()">
+					{{ showPassword ? '🙈' : '👁' }}
+				</button>
+			</div>
+
+			<div class="form-actions">
+				<button type="submit" class="btn-primary" [disabled]="loading || isLockedOut()">
+					{{ loading ? 'Entrando...' : 'Entrar' }}
+				</button>
+				<button type="button" class="btn-secondary" (click)="username = ''; password = ''; error = ''">
+					Limpar
+				</button>
+			</div>
+		</form>
+
+		<div class="demo-hint">
+			<strong>Modo de demonstração</strong><br>
+			Usuário: <code>admin</code> / Senha: <code>Admin&#64;123</code> (todos os acessos)<br>
+			Usuário: <code>portaria</code> / Senha: <code>Portaria&#64;123</code> (apenas portaria)<br>
+			Usuário: <code>inspetora</code> / Senha: <code>Inspetora&#64;123</code> (manual, inspetora, vans)<br>
+			Usuário: <code>tv</code> / Senha: <code>Tv&#64;123</code> (apenas televisão)
+		</div>
+	</div>
+</div>

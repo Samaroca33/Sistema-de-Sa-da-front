@@ -1,3 +1,12 @@
+export type View =
+	| 'portaria'
+	| 'manual'
+	| 'van'
+	| 'inspetora'
+	| 'tv'
+	| 'relatorio'
+	| 'cadastro';
+
 export interface Student {
   id: string;
   name: string;
