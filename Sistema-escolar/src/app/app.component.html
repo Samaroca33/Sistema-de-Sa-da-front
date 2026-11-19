@@ -383,14 +383,7 @@
 								<strong>{{ student.name }}</strong>
 								<small>{{ student.grade }} • Turma {{ student.class }}</small>
 							</span>
-							<em>{{ isQueued(student) ? 'Na fila' : 'Selecionar' }}</em>
-						</button>
-						<button
-							class="secondary-btn"
-							type="button"
-							(click)="editStudent(student)"
-						>
-							Editar aluno
+						<em>{{ isQueued(student) ? 'Na fila' : 'Selecionar' }}</em>
 						</button>
 					</div>
 				</div>
@@ -1162,6 +1155,234 @@
 					>
 						Cadastrar aluno
 					</button>
+				</div>
+			</div>
+		</section>
+
+		<!-- ================================================================
+		     EDIÇÃO DE ALUNO — página dedicada (navbar "Editar Aluno")
+		     ================================================================ -->
+		<section
+			*ngIf="view === 'edicao'"
+			class="view"
+		>
+			<div class="section-card cadastro-card">
+				<div class="section-title">
+					<div>
+						<h2>Edição de Aluno</h2>
+						<p>Selecione um aluno abaixo para editar os dados.</p>
+					</div>
+					<button
+						class="secondary-btn"
+						type="button"
+						*ngIf="editingStudent"
+						(click)="cancelEditStudent()"
+					>
+						Cancelar edição ✕
+					</button>
+				</div>
+
+				<div
+					class="error-card form-msg"
+					*ngIf="editError"
+				>
+					{{ editError }}
+				</div>
+				<div
+					class="success-card form-msg"
+					*ngIf="editMessage"
+				>
+					{{ editMessage }}
+				</div>
+
+				<!-- Lista de alunos -->
+				<div class="filters" *ngIf="!editingStudent">
+					<select [(ngModel)]="editGrade">
+						<option value="all">Todos os alunos</option>
+						<option value="5º Ano">5º Ano</option>
+					</select>
+					<input
+						[(ngModel)]="editSearch"
+						placeholder="Buscar aluno..."
+					/>
+				</div>
+				<div
+					class="empty"
+					*ngIf="!editingStudent && !svc.studentsLoading() && editStudents.length === 0"
+				>
+					Nenhum aluno encontrado para este filtro.
+				</div>
+				<div
+					class="student-grid"
+					*ngIf="!editingStudent"
+				>
+					<div
+						class="manual-student-item"
+						*ngFor="let student of editStudents"
+					>
+						<button
+							class="student-card"
+							type="button"
+							(click)="editStudent(student)"
+						>
+							<app-avatar
+								[small]="true"
+								[name]="student.name"
+								[color]="student.avatarColor"
+								[photo]="student.photo"
+								></app-avatar>
+							<span>
+								<strong>{{ student.name }}</strong>
+								<small>{{ student.grade }} • Turma {{ student.class }}</small>
+							</span>
+							<em>Editar</em>
+						</button>
+					</div>
+				</div>
+
+				<!-- Formulário de edição do aluno selecionado -->
+				<div *ngIf="editingStudent">
+					<div class="form-grid">
+						<label>Nome completo<input [(ngModel)]="editDraft.name" /></label>
+						<label
+							>E-mail do responsável<input
+								type="email"
+								[(ngModel)]="editDraft.email"
+							/></label>
+						<label
+							>CPF<input
+								[(ngModel)]="editDraft.cpf"
+								placeholder="000.000.000-00"
+							/></label>
+						<label
+							>Data de nascimento<input
+								type="date"
+								[(ngModel)]="editDraft.birthDate"
+							/></label>
+						<label
+							>Ano<select [(ngModel)]="editDraft.grade">
+								<option value="5º Ano">5º Ano</option>
+							</select></label
+						>
+						<label
+							>Turma<select [(ngModel)]="editDraft.class">
+								<option value="A">5º Ano A</option>
+								<option value="B">5º Ano B</option>
+							</select></label
+						>
+						<label
+							>Nome do responsável<input [(ngModel)]="editDraft.parentName"
+							/></label>
+						<label
+							>Telefone do responsável<input
+								type="tel"
+								[(ngModel)]="editDraft.guardianPhone"
+								placeholder="(00) 00000-0000"
+							/></label>
+						<label class="check-label">
+							<input
+								type="checkbox"
+								[(ngModel)]="editDraft.isVan"
+								(ngModelChange)="onEditVanChange($event)"
+							/>
+							<span>Aluno utiliza Van Escolar</span>
+						</label>
+						<label>
+							Motorista da van
+							<select
+								[(ngModel)]="editDraft.vanDriverId"
+								[disabled]="!editDraft.isVan"
+							>
+								<option [ngValue]="undefined">Selecione o motorista</option>
+								<option
+									*ngFor="let driver of svc.vanDrivers()"
+									[value]="driver.id"
+								>
+									{{ driver.name }} • {{ driver.plate }}
+								</option>
+							</select>
+						</label>
+						<label>
+							Cartão RFID
+							<input
+								[(ngModel)]="editDraft.rfidCard"
+								placeholder="UID do cartão"
+							/>
+						</label>
+						<div
+							class="rfid-register"
+							*ngIf="!rfidRegisterMode"
+						>
+							<button
+								class="secondary-btn"
+								type="button"
+								(click)="registerRfidForEdit()"
+							>
+								Cadastrar cartão RFID
+							</button>
+						</div>
+						<div
+							class="rfid-register"
+							*ngIf="rfidRegisterMode"
+						>
+							<button
+								class="secondary-btn"
+								type="button"
+								(click)="cancelRegisterRfid()"
+							>
+								Cancelar leitura
+							</button>
+							<small
+								>Aproxime o cartão RFID do leitor para preencher
+								automaticamente.</small
+							>
+						</div>
+						<label class="edit-photo-field"
+							>Foto do aluno<input
+								type="file"
+								accept="image/*"
+								(change)="onEditPhotoSelected($event)"
+							/></label>
+					</div>
+					<div
+						class="edit-photo-preview"
+						*ngIf="editDraft.photo"
+					>
+						<app-avatar
+							[name]="editDraft.name || ''"
+							[photo]="editDraft.photo"
+							[color]="editDraft.avatarColor || '#C8102E'"
+							></app-avatar>
+						<button
+							class="secondary-btn"
+							type="button"
+							(click)="removeEditPhoto()"
+						>
+							Remover foto
+						</button>
+					</div>
+					<div class="form-actions edit-modal-actions">
+						<button
+							class="danger-btn"
+							type="button"
+							(click)="deleteStudent(editingStudent)"
+						>
+							Excluir aluno</button
+						><span class="action-spacer"></span
+						><button
+							class="secondary-btn"
+							type="button"
+							(click)="cancelEditStudent()"
+						>
+							Cancelar</button
+						><button
+							class="primary-btn"
+							type="button"
+							(click)="saveStudentEdit()"
+						>
+							Salvar alterações
+						</button>
+					</div>
 				</div>
 			</div>
 		</section>

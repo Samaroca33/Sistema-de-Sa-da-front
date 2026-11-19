@@ -50,7 +50,7 @@ export class AuthService {
 
 	/** Views permitidas por role. */
 	private readonly allowedViews: Record<Role, View[]> = {
-		ADMIN: ['portaria', 'manual', 'van', 'inspetora', 'tv', 'relatorio', 'cadastro'],
+		ADMIN: ['portaria', 'manual', 'van', 'inspetora', 'tv', 'relatorio', 'cadastro', 'edicao'],
 		PORTARIA: ['portaria'],
 		INSPIRATORA: ['manual', 'inspetora', 'van'],
 		TV: ['tv'],

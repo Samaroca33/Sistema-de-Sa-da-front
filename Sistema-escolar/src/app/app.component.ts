@@ -66,6 +66,8 @@ readonly navItems: NavItem[] = [
 
 	manualGrade = 'all';
 	manualSearch = '';
+	editGrade = 'all';
+	editSearch = '';
 	editingStudent: Student | null = null;
 	editDraft: Partial<Student> = {};
 	deletingStudentId: string | null = null;
@@ -649,6 +651,8 @@ readonly navItems: NavItem[] = [
 				return 'Histórico de saídas da sessão';
 			case 'cadastro':
 				return 'Cadastro de novos alunos';
+			case 'edicao':
+				return 'Edição de alunos cadastrados';
 			default:
 				return '';
 		}
@@ -673,12 +677,32 @@ readonly navItems: NavItem[] = [
 			const normalizedGrade =
 				student.grade === '5º Ano' ? `5º Ano ${student.class}` : student.grade;
 			const matchesGrade =
-				this.manualGrade === 'all' ||
-				normalizedGrade === this.manualGrade ||
-				(this.manualGrade === '5º Ano A' &&
+					this.manualGrade === 'all' ||
+					normalizedGrade === this.manualGrade ||
+					(this.manualGrade === '5º Ano A' &&
+						student.grade === '5º Ano' &&
+						student.class === 'A') ||
+					(this.manualGrade === '5º Ano B' &&
+						student.grade === '5º Ano' &&
+						student.class === 'B');
+				const matchesName = !q || student.name.toLowerCase().includes(q);
+				return matchesGrade && matchesName;
+			});
+	}
+
+	/** Alunos listados na página Edição de Aluno (com filtros próprios). */
+	get editStudents(): Student[] {
+		const q = this.editSearch.trim().toLowerCase();
+		return this.svc.students().filter((student) => {
+			const normalizedGrade =
+				student.grade === '5º Ano' ? `5º Ano ${student.class}` : student.grade;
+			const matchesGrade =
+				this.editGrade === 'all' ||
+				normalizedGrade === this.editGrade ||
+				(this.editGrade === '5º Ano A' &&
 					student.grade === '5º Ano' &&
 					student.class === 'A') ||
-				(this.manualGrade === '5º Ano B' &&
+				(this.editGrade === '5º Ano B' &&
 					student.grade === '5º Ano' &&
 					student.class === 'B');
 			const matchesName = !q || student.name.toLowerCase().includes(q);
