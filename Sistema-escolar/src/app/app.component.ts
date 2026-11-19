@@ -49,7 +49,7 @@ readonly navItems: NavItem[] = [
 		{ key: 'inspetora', label: 'Inspetora', icon: '✅' },
 		{ key: 'tv', label: 'Televisão', icon: '📺' },
 		{ key: 'relatorio', label: 'Relatório Diário', icon: '📊' },
-		{ key: 'cadastro', label: 'Cerrar Aluno', icon: '🎒' },
+		{ key: 'cadastro', label: 'Cadastrar Aluno', icon: '🎒' },
 		{ key: 'edicao', label: 'Editar Aluno', icon: '✏️' },
 	];
 
