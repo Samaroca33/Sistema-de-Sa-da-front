@@ -42,14 +42,15 @@ export class AppComponent implements OnDestroy {
 	fullscreenPinSuccess = '';
 	fullscreenPinSubmitting = false;
 
-	readonly navItems: NavItem[] = [
+readonly navItems: NavItem[] = [
 		{ key: 'portaria', label: 'Portaria', icon: '📡' },
 		{ key: 'manual', label: 'Chamada Manual', icon: '📝' },
 		{ key: 'van', label: 'Van Escolar', icon: '🚐' },
 		{ key: 'inspetora', label: 'Inspetora', icon: '✅' },
 		{ key: 'tv', label: 'Televisão', icon: '📺' },
 		{ key: 'relatorio', label: 'Relatório Diário', icon: '📊' },
-		{ key: 'cadastro', label: 'Cadastrar Aluno', icon: '🎒' },
+		{ key: 'cadastro', label: 'Cerrar Aluno', icon: '🎒' },
+		{ key: 'edicao', label: 'Editar Aluno', icon: '✏️' },
 	];
 
 	now = new Date();
@@ -219,6 +220,10 @@ export class AppComponent implements OnDestroy {
 	}
 
 	changeFullscreenPin(newPin: string): void {
+		if (!this.authService.isAdmin()) {
+			this.fullscreenPinError = 'Apenas o administrador pode alterar o código PIN.';
+			return;
+		}
 		const pin = String(newPin ?? '').trim();
 		this.fullscreenPinSuccess = '';
 		this.fullscreenPinError = '';
@@ -644,6 +649,8 @@ export class AppComponent implements OnDestroy {
 				return 'Histórico de saídas da sessão';
 			case 'cadastro':
 				return 'Cadastro de novos alunos';
+			default:
+				return '';
 		}
 	}
 
@@ -1010,7 +1017,30 @@ export class AppComponent implements OnDestroy {
 		this.rfidRegisterMode = false;
 	}
 
-	/** Inicia a leitura do próximo cartão aproximado para vinculá-lo ao aluno em edição. */
+	/** Marca a foto para remoção: será apagada no back-end ao salvar a edição. */
+	removeEditPhoto(): void {
+		this.editDraft.photo = null as any;
+	}
+
+	/** Exclui o aluno (com confirmação) via DELETE /api/alunos/{id}. */
+	async deleteStudent(student: Student): Promise<void> {
+		const confirmed = window.confirm(
+			`Tem certeza que deseja excluir o aluno ${student.name}? Esta ação não poderá ser desfeita.`,
+		);
+		if (!confirmed) return;
+		this.editError = '';
+		this.editMessage = '';
+		try {
+			await this.svc.deleteStudent(student.id);
+			if (this.editingStudent?.id === student.id) this.cancelEditStudent();
+			this.editMessage = `${student.name} foi excluído(a).`;
+		} catch (error) {
+			console.error('Falha ao excluir aluno', error);
+			this.editError =
+				'Não foi possível excluir pela API. Verifique se o back-end implementa DELETE /api/alunos/{id}.';
+		}
+	}
+
 	registerRfidForEdit(): void {
 		if (!this.editingStudent) return;
 		this.editError = '';
@@ -1074,27 +1104,7 @@ export class AppComponent implements OnDestroy {
 		input.value = '';
 	}
 
-	removeEditPhoto(): void {
-		this.editDraft.photo = undefined;
-	}
-
-	async deleteStudent(student: Student): Promise<void> {
-		const confirmed = window.confirm(
-			`Tem certeza que deseja excluir o aluno ${student.name}? Esta ação não poderá ser desfeita.`,
-		);
-		if (!confirmed) return;
-		this.editError = '';
-		this.editMessage = '';
-		try {
-			await this.svc.deleteStudent(student.id);
-			if (this.editingStudent?.id === student.id) this.cancelEditStudent();
-			this.editMessage = `${student.name} foi excluído(a).`;
-		} catch (error) {
-			console.error('Falha ao excluir aluno', error);
-			this.editError =
-				'Não foi possível excluir pela API. Verifique se o back-end implementa DELETE /api/alunos/{id}.';
-		}
-	}
+	/** Inicia a leitura do próximo cartão aproximado para vinculá-lo ao aluno em edição. */
 
 	async saveStudentEdit(): Promise<void> {
 		this.editError = '';

@@ -5,7 +5,8 @@ export type View =
 	| 'inspetora'
 	| 'tv'
 	| 'relatorio'
-	| 'cadastro';
+	| 'cadastro'
+	| 'edicao';
 
 export interface Student {
   id: string;

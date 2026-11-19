@@ -89,7 +89,7 @@ type StudentMeta = {
 	isVan?: boolean;
 	vanDriverId?: string;
 	avatarColor?: string;
-	photo?: string;
+	photo?: string | null;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -287,7 +287,11 @@ export class PortariaService {
 				.join('')
 				.toUpperCase(),
 			// A foto vem do back-end (fotoUrl); o localStorage é apenas fallback.
-			photo: this.resolveFotoUrl(aluno.fotoUrl) || meta.photo,
+			// Se a foto foi removida (meta.photo === null), não reaproveita o cache antigo.
+			photo:
+				meta.photo === null
+					? undefined
+					: this.resolveFotoUrl(aluno.fotoUrl) || meta.photo || undefined,
 			email: aluno.email || meta.email || '',
 			cpf: aluno.cpf || meta.cpf || '',
 			birthDate: aluno.dataNascimento || meta.birthDate || '',
@@ -418,6 +422,41 @@ export class PortariaService {
 		return saved;
 	}
 
+	/**
+	 * Remove a foto do aluno no back-end. Tenta primeiro DELETE /alunos/{id}/foto;
+	 * se o endpoint não existir (404/405), faz fallback via PUT /alunos/{id} com
+	 * fotoUrl nula e limpa o fallback local.
+	 */
+	private async deleteFoto(alunoId: string): Promise<void> {
+		try {
+			await firstValueFrom(
+				this.http.delete(
+					`${API_BASE_URL}/alunos/${encodeURIComponent(alunoId)}/foto`,
+				),
+			);
+		} catch (error: any) {
+			const status = error?.status;
+			if (status !== 404 && status !== 405) {
+				console.error('Falha ao remover a foto do aluno', error);
+			}
+			// Fallback: grava fotoUrl nula direto no cadastro do aluno.
+			try {
+				await firstValueFrom(
+					this.http.put(
+						`${API_BASE_URL}/alunos/${encodeURIComponent(alunoId)}`, 
+						{ fotoUrl: null },
+					),
+				);
+			} catch (fallbackError) {
+				console.warn(
+					'Back-end sem endpoint de remoção de foto; removendo apenas localmente.',
+					fallbackError,
+				);
+			}
+		}
+		this.saveStudentMeta(alunoId, { photo: null });
+	}
+
 	/** Converte um data URL para File e envia via multipart para POST /alunos/{id}/foto. */
 	private async uploadFoto(alunoId: string, dataUrl: string): Promise<void> {
 		try {
@@ -480,6 +519,11 @@ export class PortariaService {
 				payload,
 			),
 		);
+		// Se a foto foi removida na edição (rascunho sem foto), apaga também no
+		// back-end: sem isso o aluno continuaria aparecendo com a foto antiga.
+		if (!student.photo) {
+			await this.deleteFoto(student.id);
+		}
 		this.saveStudentMeta(student.id, {
 			grade: student.grade,
 			class: student.class,
@@ -492,11 +536,14 @@ export class PortariaService {
 			isVan: student.isVan,
 			vanDriverId: student.isVan ? student.vanDriverId : undefined,
 			avatarColor: student.avatarColor,
-			photo: student.photo,
+			photo: student.photo ?? null,
 		});
 		// A foto agora é enviada separadamente via multipart, nunca pelo PUT de dados.
 		if (student.photo?.startsWith('data:image/')) {
 			await this.uploadFoto(student.id, student.photo);
+		} else if (!student.photo) {
+			// Foto removida: não deixa o meta reaproveitar cache antigo na próxima carga.
+			this.saveStudentMeta(student.id, { photo: null });
 		}
 		await this.loadStudents();
 	}

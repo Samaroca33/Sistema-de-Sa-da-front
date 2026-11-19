@@ -1,4 +1,4 @@
-import { Injectable, signal, computed, effect, inject } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { API_BASE_URL } from './api.config';
@@ -12,10 +12,7 @@ export interface AuthUser {
 	role: Role;
 }
 
-interface LoginRequest {
-	username: string;
-	password: string;
-}
+
 
 interface LoginResponse {
 	user: { id: string; name: string; role: string };
@@ -252,7 +249,7 @@ export class AuthService {
 				role: (response.user.role as Role),
 			};
 			token = response.token;
-		} catch (error) {
+		} catch {
 			// Fallback de demonstração quando a API não está disponível.
 			// Em produção, remover este bloco e exigir o back-end.
 			const matched = DEMO_USERS.find(
@@ -286,9 +283,7 @@ export class AuthService {
 
 	logout(reason?: string): void {
 		this.clearSession();
-		if (reason) {
-			// Não exibe o motivo em tela de login para não vaziar informações.
-		}
+		void reason; // Não exibe o motivo em tela de login para não vaziar informações.
 	}
 
 	hasToken(): boolean {

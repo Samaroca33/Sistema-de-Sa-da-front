@@ -2415,6 +2415,44 @@ tbody tr:last-child td { border-bottom: 0; }
   backdrop-filter: blur(10px);
 }
 
+/* TV em telas pequenas (celulares) */
+.tv-screen.tv-mobile {
+  .tv-top { padding: 1.5vh 4vw; }
+  .tv-clock { font-size: clamp(18px, 4vw, 28px); }
+  .tv-stage { padding: 16px; }
+  .tv-grid { gap: 14px; }
+  .tv-initials { font-size: 28cqw; }
+  .tv-caption { padding: 10cqw 4cqw 4cqw; }
+  .tv-caption small { font-size: 3.5cqw; }
+  .tv-caption strong { font-size: 7cqw; }
+  .tv-caption span { font-size: 4cqw; }
+  .tv-idle h2 { font-size: clamp(24px, 6vh, 48px); }
+  .tv-idle p { font-size: clamp(14px, 3vh, 24px); }
+}
+
+/* TV em telas grandes (TV 4K / 16:9) */
+@media (min-aspect-ratio: 16/9) and (min-width: 1600px) {
+  .tv-top { padding: 3vh 4vw; }
+  .tv-clock { font-size: clamp(32px, 5vh, 56px); }
+  .tv-stage { padding: 40px; }
+  .tv-grid { gap: 28px; }
+  .tv-initials { font-size: 42cqw; }
+  .tv-caption { padding: 16cqw 6cqw 6cqw; }
+  .tv-caption small { font-size: 4.8cqw; }
+  .tv-caption strong { font-size: 10cqw; }
+  .tv-caption span { font-size: 5.5cqw; }
+  .tv-idle h2 { font-size: clamp(40px, 8vh, 80px); }
+  .tv-idle p { font-size: clamp(20px, 4vh, 40px); }
+}
+
+/* TV em telas muito largas (super-wide 21:9+) */
+@media (min-aspect-ratio: 21/9) and (min-width: 2200px) {
+  .tv-stage { padding: 50px; }
+  .tv-grid { gap: 32px; }
+  .tv-clock { font-size: clamp(40px, 6vh, 72px); }
+  .tv-idle h2 { font-size: clamp(50px, 10vh, 100px); }
+}
+
 /* ---------- Responsivo ---------- */
 @media (max-width: 800px) {
   .topbar { padding: 12px 18px; }
@@ -2424,6 +2462,87 @@ tbody tr:last-child td { border-bottom: 0; }
   .section-card { padding: 20px; }
   .rfid-circle { width: 220px; height: 220px; }
   .clock { font-size: 20px; }
+}
+
+/* Celular pequeno (até 480px) */
+@media (max-width: 480px) {
+  .topbar { padding: 10px 14px; min-height: auto; }
+  .topbar-user span { display: none; }
+  .brand { gap: 10px; }
+  .brand-mark { width: 38px; height: 38px; font-size: 13px; }
+  .brand strong { font-size: 13px; }
+  .brand span { font-size: 9px; letter-spacing: 1.5px; }
+  .nav-tabs { top: 62px; margin-top: 8px; padding: 4px; }
+  .nav-tabs button { min-height: 40px; padding: 0 12px; font-size: 12px; }
+  .nav-icon { margin-right: 5px; font-size: 13px; }
+  .page-head { padding: 16px 14px 2px; }
+  .page-head h1 { font-size: 20px; }
+  .page-head p { font-size: 12px; }
+  .clock { font-size: 16px; padding: 7px 12px; }
+  .content { padding: 14px 12px 32px; }
+  .section-card { padding: 16px; }
+  .form-grid { grid-template-columns: 1fr; gap: 12px; }
+  .student-grid { grid-template-columns: 1fr; }
+  .driver-grid { grid-template-columns: 1fr; }
+  .report-stats { grid-template-columns: repeat(2, 1fr); }
+  .rfid-circle { width: 180px; height: 180px; margin: 18px 0 14px; }
+  .rfid-icon { font-size: 40px; }
+  .scan-card { padding: 16px; gap: 14px; }
+  .scan-card h2 { font-size: 19px; }
+  .avatar { width: 46px; height: 46px; }
+  .avatar.small { width: 36px; height: 36px; }
+  .queue-item { padding: 12px 14px; }
+  .driver-card { padding: 16px; }
+  .call-banner { padding: 14px 16px; flex-direction: column; align-items: stretch; }
+  .call-banner button { width: 100%; }
+  .filters { grid-template-columns: 1fr; }
+  .report-filter { max-width: 100%; }
+  table { font-size: 12px; }
+  th, td { padding: 9px 10px; }
+  .edit-modal { width: min(92vw, 420px); max-height: 94vh; }
+
+  /* Item de aluno manual: empilha verticalmente no mobile */
+  .manual-student-item {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .manual-student-item .student-card {
+    width: 100%;
+  }
+
+  .manual-student-item .secondary-btn {
+    width: 100%;
+    margin-top: 4px;
+  }
+}
+
+/* TV / tela grande (16:9 e super-wide) */
+@media (min-width: 1600px) {
+  .content { padding: 32px 56px 64px; }
+  .section-card { padding: 36px; }
+  .page-head { padding: 40px 56px 12px; }
+  .page-head h1 { font-size: 40px; }
+  .clock { font-size: 30px; }
+  .rfid-circle { width: 320px; height: 320px; }
+  .rfid-icon { font-size: 64px; }
+  .student-grid { grid-template-columns: repeat(3, 1fr); }
+  .driver-grid { grid-template-columns: repeat(3, 1fr); }
+  .report-stats { grid-template-columns: repeat(5, 1fr); }
+  .form-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* TV 4K / telas muito largas */
+@media (min-width: 2200px) {
+  .content { padding: 40px 80px 80px; }
+  .page-head { padding: 48px 80px 16px; }
+  .page-head h1 { font-size: 48px; }
+  .section-card { padding: 44px; }
+  .rfid-circle { width: 380px; height: 380px; }
+  .student-grid { grid-template-columns: repeat(4, 1fr); }
+  .driver-grid { grid-template-columns: repeat(4, 1fr); }
+  .report-stats { grid-template-columns: repeat(6, 1fr); }
+  .form-grid { grid-template-columns: repeat(4, 1fr); }
 }
 
 @media (prefers-reduced-motion: reduce) {

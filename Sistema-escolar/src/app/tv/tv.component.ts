@@ -20,7 +20,7 @@ const PAD = 26;
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="tv-screen">
+    <div class="tv-screen" [class.tv-mobile]="isMobile()">
       <header class="tv-top">
         <div class="brand">
           <div class="brand-mark">EM</div>
@@ -66,6 +66,9 @@ export class TvComponent implements AfterViewInit, OnDestroy {
   readonly now = signal(new Date());
   private readonly box = signal({ w: window.innerWidth, h: window.innerHeight * 0.85 });
   private observer?: ResizeObserver;
+
+  /** Detecta se a tela é pequena (celular) mesmo com a TV aberta. */
+  readonly isMobile = computed(() => window.innerWidth < 768);
 
   readonly items = computed<TvItem[]>(() => {
     const list: TvItem[] = this.svc.queue().map(q => ({

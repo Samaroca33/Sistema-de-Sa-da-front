@@ -91,7 +91,7 @@
 			>
 				{{ fullscreenPinError }}
 			</div>
-			<div class="note">
+			<div class="note" *ngIf="authService.isAdmin()">
 				<span>Alterar código</span>
 				<input
 					type="text"
